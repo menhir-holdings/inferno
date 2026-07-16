@@ -33,8 +33,10 @@ npm run dev
 | Attack champions only | \` |
 | Scoreboard | Tab |
 
-## Linear
+## Live
 
-Project: [Inferno](https://linear.app/menhir-holdings/project/inferno-3a73f03f1d11)
+- App: https://inferno-ruby.vercel.app
+- Repo: https://github.com/menhir-holdings/inferno
+- Linear: [Inferno](https://linear.app/menhir-holdings/project/inferno-3a73f03f1d11)
 
 Menhir Holdings · Workshop
