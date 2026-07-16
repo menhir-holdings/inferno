@@ -194,16 +194,20 @@ export class ArenaRenderer {
       const g = new Graphics()
       const isUlt = p.kind === 'ultimate'
       const isAbility = p.kind === 'ability' || isUlt
-      const r = isUlt ? 14 : isAbility ? 8 : 5
-      const color = isUlt ? 0xc4f000 : isAbility ? 0xf472b6 : 0xfde68a
+      const isMeleeAa = p.kind === 'aa' && p.radius >= 8
+      const r = isUlt ? 14 : isAbility ? 8 : isMeleeAa ? 7 : 5
+      const color = isUlt ? 0xc4f000 : isAbility ? 0xf472b6 : isMeleeAa ? 0xffe08a : 0xfde68a
       g.circle(p.pos.x, p.pos.y, r)
-      g.fill({ color, alpha: 0.9 })
+      g.fill({ color, alpha: 0.92 })
       if (isUlt) {
         g.circle(p.pos.x, p.pos.y, r + 6)
         g.stroke({ width: 2, color: 0xfff59e, alpha: 0.45 })
       } else if (isAbility) {
         g.circle(p.pos.x - p.vel.x * 0.03, p.pos.y - p.vel.y * 0.03, r * 0.6)
         g.fill({ color: 0xf472b6, alpha: 0.35 })
+      } else if (isMeleeAa) {
+        g.circle(p.pos.x - p.vel.x * 0.012, p.pos.y - p.vel.y * 0.012, r * 0.55)
+        g.fill({ color: 0xffc857, alpha: 0.4 })
       }
       this.fxLayer.addChild(g)
     }

@@ -115,19 +115,26 @@ function tryAutoAttack(world: World, u: Unit) {
 
   u.moveTo = null
   const dmg = aaDamage(u)
+  const n = norm(u.pos, target.pos)
   if (u.stats.melee) {
-    const n = norm(u.pos, target.pos)
-    const reach = UNIT_RADIUS + 10
-    world.swipes.push({
-      x1: u.pos.x + n.x * 8,
-      y1: u.pos.y + n.y * 8,
-      x2: u.pos.x + n.x * reach,
-      y2: u.pos.y + n.y * reach,
-      ttl: 0.14,
+    // Short, fast melee AA bolt (damage on impact, not instant)
+    const speed = 1400
+    world.projectiles.push({
+      id: world.nextProjectileId++,
+      fromId: u.id,
+      toId: target.id,
+      pos: {
+        x: u.pos.x + n.x * (UNIT_RADIUS * 0.45),
+        y: u.pos.y + n.y * (UNIT_RADIUS * 0.45),
+      },
+      vel: { x: n.x * speed, y: n.y * speed },
+      damage: dmg,
+      ttl: 0.35,
+      kind: 'aa',
+      team: u.team,
+      radius: 9,
     })
-    dealDamage(world, u, target, dmg, target.archetype !== 'tank')
   } else {
-    const n = norm(u.pos, target.pos)
     world.projectiles.push({
       id: world.nextProjectileId++,
       fromId: u.id,
