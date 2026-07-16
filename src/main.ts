@@ -1,7 +1,8 @@
 import './style.css'
 import { createApp, ArenaRenderer } from './render/arena'
 import { generateScenario, scenarioToWorld } from './scenario/generate'
-import { attachInput, createInputState, targetingLabel } from './input/controller'
+import { generateLaningScenario } from './scenario/laning'
+import { attachInput, createInputState, cancelTargeting, targetingLabel } from './input/controller'
 import {
   DEFAULT_BINDINGS,
   labelForCode,
@@ -68,9 +69,11 @@ function showHome() {
   const cta = el('div', 'cta-row')
   const fire = el('button', 'btn-fire', 'Enter Teamfight') as HTMLButtonElement
   fire.addEventListener('click', () => startTeamfight(lastScenarioSeed))
+  const lane = el('button', 'btn', 'Enter Laning') as HTMLButtonElement
+  lane.addEventListener('click', () => startLaning((lastScenarioSeed ^ 0x1a4e) >>> 0))
   const soon = el('ul', 'soon-list')
-  soon.innerHTML = '<li>More modes shelved — teamfight only for now</li>'
-  cta.append(fire, soon)
+  soon.innerHTML = '<li>Jungle shelved — teamfight + laning active</li>'
+  cta.append(fire, lane, soon)
   hero.append(cta)
   shell.append(hero)
 
@@ -83,10 +86,21 @@ function showHome() {
 }
 
 async function startTeamfight(seed: number, existing?: Scenario) {
-  stopLoop()
-  cleanupFight()
   lastScenarioSeed = seed
   scenario = existing ?? generateScenario(seed, 60)
+  await startFight(scenario)
+}
+
+async function startLaning(seed: number, existing?: Scenario) {
+  lastScenarioSeed = seed
+  scenario = existing ?? generateLaningScenario(seed, 90)
+  await startFight(scenario)
+}
+
+async function startFight(sc: Scenario) {
+  stopLoop()
+  cleanupFight()
+  scenario = sc
   world = scenarioToWorld(scenario)
   inputState.recording = []
   inputState.targeting = 'none'
@@ -140,6 +154,9 @@ function frame(now: number) {
     acc -= DT
   }
   renderer.render(world, inputState)
+  if (!world.units[world.playerId]?.alive) {
+    cancelTargeting(inputState)
+  }
   updateHud()
   updateAbilityBar()
   syncScoreboard()
@@ -164,10 +181,15 @@ function updateHud() {
   const targetLine = target?.alive
     ? `<div class="stat">Target <strong>${target.champName}</strong></div>`
     : '<div class="stat">Target <strong>—</strong></div>'
+  const csLine =
+    world.mode === 'laning'
+      ? `<div class="stat">CS <strong>${world.playerCs}</strong></div>`
+      : ''
   bar.innerHTML = `
     <div class="stat">Time <strong>${remain.toFixed(1)}s</strong></div>
     <div class="stat">${p.champName} <strong>${p.archetype}</strong></div>
     <div class="stat">HP <strong>${Math.max(0, Math.round(p.hp))}</strong>/${p.stats.maxHp}</div>
+    ${csLine}
     ${targetLine}
     ${modeBadge}
     <div class="stat">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'off'}</strong></div>
@@ -286,9 +308,17 @@ function showDebrief(score: ScoreBreakdown) {
   `
   const actions = box.querySelector('.actions')!
   const again = el('button', 'btn primary', 'Fight again')
-  again.addEventListener('click', () => startTeamfight(scenario!.seed, scenario!))
+  again.addEventListener('click', () =>
+    scenario!.mode === 'laning'
+      ? startLaning(scenario!.seed, scenario!)
+      : startTeamfight(scenario!.seed, scenario!),
+  )
   const regen = el('button', 'btn', 'New fight')
-  regen.addEventListener('click', () => startTeamfight((Math.random() * 1e9) | 0))
+  regen.addEventListener('click', () =>
+    scenario!.mode === 'laning'
+      ? startLaning((Math.random() * 1e9) | 0)
+      : startTeamfight((Math.random() * 1e9) | 0),
+  )
   const home = el('button', 'btn', 'Exit')
   home.addEventListener('click', () => showHome())
   actions.append(again, regen, home)

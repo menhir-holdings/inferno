@@ -13,8 +13,19 @@ import {
   norm,
 } from './combat'
 import type { AbilitySlot, Unit, Vec2, World } from './types'
+import { tickLaning } from './laning'
 
 const DT = 1 / 60
+
+function wardAimFrom(u: Unit, aim: Vec2): Vec2 {
+  const d = dist(u.pos, aim)
+  if (d <= WARD_CAST_RANGE) return aim
+  const n = norm(u.pos, aim)
+  return {
+    x: u.pos.x + n.x * WARD_CAST_RANGE,
+    y: u.pos.y + n.y * WARD_CAST_RANGE,
+  }
+}
 
 function applyAuraEffects(world: World) {
   for (const u of world.units) {
@@ -70,18 +81,31 @@ function tryAutoAttack(world: World, u: Unit) {
   const range = u.stats.aaRange
   const stop = attackStopDist(u)
   const d = dist(u.pos, target.pos)
-  if (d > range + 4) {
-    const goal = approachPoint(u.pos, target.pos, stop)
-    u.moveTo = goal
-    return
-  }
-  if (d > stop + 2 && u.stats.melee) {
+  const inMeleeRange = u.stats.melee && d <= range
+  const inRangedRange = !u.stats.melee && d <= range + 4
+
+  if (!inMeleeRange && !inRangedRange) {
     u.moveTo = approachPoint(u.pos, target.pos, stop)
     return
   }
+
+  if (u.stats.melee && d > stop + 1) {
+    u.moveTo = approachPoint(u.pos, target.pos, stop)
+    return
+  }
+
   u.moveTo = null
   const dmg = aaDamage(u)
-  if (u.stats.melee || range < 200) {
+  if (u.stats.melee) {
+    const n = norm(u.pos, target.pos)
+    const reach = UNIT_RADIUS + 10
+    world.swipes.push({
+      x1: u.pos.x + n.x * 8,
+      y1: u.pos.y + n.y * 8,
+      x2: u.pos.x + n.x * reach,
+      y2: u.pos.y + n.y * reach,
+      ttl: 0.14,
+    })
     dealDamage(world, u, target, dmg, target.archetype !== 'tank')
   } else {
     const n = norm(u.pos, target.pos)
@@ -120,7 +144,16 @@ function tickProjectiles(world: World) {
         if (!t.alive || t.team === p.team) continue
         if (dist(p.pos, t.pos) < p.radius + UNIT_RADIUS * 0.7) {
           const atk = world.units[p.fromId]
-          if (atk) dealDamage(world, atk, t, p.damage, true)
+          if (atk) {
+            dealDamage(world, atk, t, p.damage, true)
+            if (p.kind === 'ultimate' && p.splashRadius) {
+              for (const o of enemiesOf(world, atk)) {
+                if (o.id !== t.id && dist(p.pos, o.pos) < p.splashRadius) {
+                  dealDamage(world, atk, o, p.damage * (p.splashMult ?? 0.35), false)
+                }
+              }
+            }
+          }
           hit = true
           break
         }
@@ -189,12 +222,22 @@ export function castAbility(
   if (!target) return false
 
   if (slot === 'r') {
-    dealDamage(world, u, target, dmg, true)
-    for (const o of enemiesOf(world, u)) {
-      if (o.id !== target.id && dist(target.pos, o.pos) < 150) {
-        dealDamage(world, u, o, dmg * 0.35, false)
-      }
-    }
+    const aimPoint = aim ?? target.pos
+    const n = norm(u.pos, aimPoint)
+    world.projectiles.push({
+      id: world.nextProjectileId++,
+      fromId: u.id,
+      toId: null,
+      pos: { ...u.pos },
+      vel: { x: n.x * 640, y: n.y * 640 },
+      damage: dmg,
+      ttl: 1.35,
+      kind: 'ultimate',
+      team: u.team,
+      radius: 58,
+      splashRadius: 150,
+      splashMult: 0.35,
+    })
     if (u.archetype === 'assassin') {
       u.pos = approachPoint(target.pos, u.pos, UNIT_DIAMETER)
       u.pos = clampToArena(u.pos, world.arena, UNIT_RADIUS)
@@ -240,6 +283,7 @@ export function useActive(world: World, u: Unit, slot: 1 | 2 | 3) {
 
 export function placeWard(world: World, u: Unit, pos: { x: number; y: number }) {
   if (!u.alive) return false
+  if (dist(u.pos, pos) > WARD_CAST_RANGE + 2) return false
   world.wards.push({
     id: world.nextWardId++,
     pos: clampToArena(pos, world.arena),
@@ -251,12 +295,14 @@ export function placeWard(world: World, u: Unit, pos: { x: number; y: number }) 
 
 export function queueWard(world: World, u: Unit, pos: Vec2): boolean {
   if (!u.alive) return false
-  if (dist(u.pos, pos) <= WARD_CAST_RANGE) {
+  const aim = wardAimFrom(u, pos)
+  if (dist(u.pos, aim) <= WARD_CAST_RANGE) {
     u.pendingWard = null
-    return placeWard(world, u, pos)
+    u.moveTo = null
+    return placeWard(world, u, aim)
   }
-  u.pendingWard = { ...pos }
-  u.moveTo = approachPoint(u.pos, pos, WARD_CAST_RANGE * 0.92)
+  u.pendingWard = aim
+  u.moveTo = approachPoint(u.pos, aim, WARD_CAST_RANGE * 0.92)
   u.attackMoveTo = null
   return true
 }
@@ -385,14 +431,22 @@ export function tickWorld(world: World) {
   for (const f of world.floaters) f.ttl -= DT
   world.floaters = world.floaters.filter((f) => f.ttl > 0)
 
+  for (const s of world.swipes) s.ttl -= DT
+  world.swipes = world.swipes.filter((s) => s.ttl > 0)
+
   for (const w of world.wards) w.ttl -= DT
   world.wards = world.wards.filter((w) => w.ttl > 0)
 
   tickProjectiles(world)
 
+  if (world.mode === 'laning') {
+    tickLaning(world)
+    if (world.ended) return
+  }
+
   const blueAlive = world.units.some((u) => u.alive && u.team === 'blue')
   const redAlive = world.units.some((u) => u.alive && u.team === 'red')
-  if (!blueAlive || !redAlive) {
+  if (world.mode !== 'laning' && (!blueAlive || !redAlive)) {
     world.ended = true
     const player = world.units[world.playerId]!
     if (player.team === 'blue') {

@@ -2,6 +2,7 @@ import { Application, Container, Graphics, Sprite, Text, TextStyle, Assets, Text
 import { champIconUrl } from '../sim/champions'
 import { COLORS, ICON_RADIUS, UNIT_RADIUS } from '../sim/constants'
 import type { InputState } from '../input/controller'
+import { drawLaneOverlay } from '../sim/laning'
 import type { Unit, World } from '../sim/types'
 
 interface UnitView {
@@ -26,13 +27,18 @@ export class ArenaRenderer {
 
   constructor(app: Application) {
     this.app = app
+    app.stage.eventMode = 'none'
+    app.stage.interactiveChildren = false
+    for (const layer of [this.bgLayer, this.worldLayer, this.fxLayer, this.rangeRing]) {
+      layer.eventMode = 'none'
+    }
     app.stage.addChild(this.bgLayer)
     app.stage.addChild(this.worldLayer)
     app.stage.addChild(this.fxLayer)
     this.fxLayer.addChild(this.rangeRing)
   }
 
-  drawArena(w: number, h: number) {
+  drawArena(w: number, h: number, mode: World['mode'] = 'teamfight') {
     this.bgLayer.clear()
     this.bgLayer.rect(0, 0, w, h)
     this.bgLayer.fill({ color: COLORS.arena })
@@ -48,10 +54,14 @@ export class ArenaRenderer {
     this.bgLayer.stroke({ width: 1, color: COLORS.grid, alpha: 0.35 })
     this.bgLayer.rect(8, 8, w - 16, h - 16)
     this.bgLayer.stroke({ width: 2, color: 0x2a3020, alpha: 0.8 })
-    const mid = w / 2
-    this.bgLayer.moveTo(mid, 12)
-    this.bgLayer.lineTo(mid, h - 12)
-    this.bgLayer.stroke({ width: 1, color: 0xc4f000, alpha: 0.12 })
+    if (mode === 'laning') {
+      drawLaneOverlay(w, h, this.bgLayer)
+    } else {
+      const mid = w / 2
+      this.bgLayer.moveTo(mid, 12)
+      this.bgLayer.lineTo(mid, h - 12)
+      this.bgLayer.stroke({ width: 1, color: 0xc4f000, alpha: 0.12 })
+    }
   }
 
   async ensureIcon(champId: string) {
@@ -74,7 +84,7 @@ export class ArenaRenderer {
   }
 
   async bootstrapUnits(world: World) {
-    this.drawArena(world.arena.w, world.arena.h)
+    this.drawArena(world.arena.w, world.arena.h, world.mode)
     this.worldLayer.removeChildren()
     this.views.clear()
     for (const u of world.units) {
@@ -141,7 +151,7 @@ export class ArenaRenderer {
     })
 
     view.targetRing.clear()
-    if (playerTargetId === u.id && u.alive) {
+    if (player?.alive && playerTargetId === u.id && u.alive) {
       view.targetRing.circle(0, 0, UNIT_RADIUS + 5)
       view.targetRing.stroke({ width: 2, color: COLORS.player, alpha: 0.85 })
     } else if (
@@ -182,16 +192,28 @@ export class ArenaRenderer {
 
     for (const p of world.projectiles) {
       const g = new Graphics()
-      const r = p.kind === 'ability' ? 8 : 5
+      const isUlt = p.kind === 'ultimate'
+      const isAbility = p.kind === 'ability' || isUlt
+      const r = isUlt ? 14 : isAbility ? 8 : 5
+      const color = isUlt ? 0xc4f000 : isAbility ? 0xf472b6 : 0xfde68a
       g.circle(p.pos.x, p.pos.y, r)
-      g.fill({
-        color: p.kind === 'ability' ? 0xf472b6 : 0xfde68a,
-        alpha: 0.9,
-      })
-      if (p.kind === 'ability') {
+      g.fill({ color, alpha: 0.9 })
+      if (isUlt) {
+        g.circle(p.pos.x, p.pos.y, r + 6)
+        g.stroke({ width: 2, color: 0xfff59e, alpha: 0.45 })
+      } else if (isAbility) {
         g.circle(p.pos.x - p.vel.x * 0.03, p.pos.y - p.vel.y * 0.03, r * 0.6)
         g.fill({ color: 0xf472b6, alpha: 0.35 })
       }
+      this.fxLayer.addChild(g)
+    }
+
+    for (const s of world.swipes) {
+      const g = new Graphics()
+      const alpha = Math.min(1, s.ttl * 6)
+      g.moveTo(s.x1, s.y1)
+      g.lineTo(s.x2, s.y2)
+      g.stroke({ width: 5, color: 0xfde68a, alpha })
       this.fxLayer.addChild(g)
     }
     for (const w of world.wards) {
@@ -200,6 +222,17 @@ export class ArenaRenderer {
       g.fill({ color: w.team === 'blue' ? COLORS.ally : COLORS.foe, alpha: 0.55 })
       g.circle(w.pos.x, w.pos.y, 14)
       g.stroke({ width: 1, color: 0xc4f000, alpha: 0.25 })
+      this.fxLayer.addChild(g)
+    }
+
+    for (const m of world.minions) {
+      if (!m.alive) continue
+      const g = new Graphics()
+      const color = m.team === 'blue' ? COLORS.ally : COLORS.foe
+      g.circle(m.pos.x, m.pos.y, 14)
+      g.fill({ color, alpha: 0.75 })
+      g.rect(m.pos.x - 16, m.pos.y - 22, 32 * (m.hp / m.maxHp), 3)
+      g.fill({ color: COLORS.hpHigh, alpha: 0.9 })
       this.fxLayer.addChild(g)
     }
 

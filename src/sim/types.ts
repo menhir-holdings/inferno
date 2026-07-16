@@ -123,29 +123,62 @@ export interface Projectile {
   vel: Vec2
   damage: number
   ttl: number
-  kind: 'aa' | 'ability' | 'active'
+  kind: 'aa' | 'ability' | 'ultimate' | 'active'
   team: Team
   radius: number
+  /** Splash on impact (ultimate) */
+  splashRadius?: number
+  splashMult?: number
+}
+
+export interface MeleeSwipe {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  ttl: number
+}
+
+export interface Minion {
+  id: number
+  team: Team
+  pos: Vec2
+  hp: number
+  maxHp: number
+  damage: number
+  moveSpeed: number
+  gold: number
+  alive: boolean
+  targetId: number | null
+  moveTo: Vec2 | null
+  lane: 'top' | 'mid' | 'bot'
 }
 
 export type FightResult = 'victory' | 'defeat' | 'timeout' | null
 
 export interface World {
   seed: number
+  mode: ModeId
   tick: number
   time: number
   duration: number
   arena: { w: number; h: number }
   units: Unit[]
+  minions: Minion[]
   wards: Ward[]
   projectiles: Projectile[]
+  swipes: MeleeSwipe[]
   playerId: number
   attackChampionsOnly: boolean
   ended: boolean
   result: FightResult
   nextProjectileId: number
   nextWardId: number
+  nextMinionId: number
   floaters: DamageFloater[]
+  /** Laning: player CS */
+  playerCs: number
+  waveTimer: number
 }
 
 export interface Scenario {

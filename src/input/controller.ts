@@ -162,7 +162,7 @@ export function attachInput(
     }
   }
 
-  const onClick = (e: MouseEvent) => {
+  const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return
     const world = getWorld()
     if (!world || world.ended) return
@@ -172,27 +172,28 @@ export function attachInput(
     state.pointer = pos
 
     if (state.targeting === 'attackMoveRange') {
+      e.preventDefault()
       issueAttackMove(player, pos)
       record(state, world, { type: 'amove', x: pos.x, y: pos.y })
       cancelTargeting(state)
     }
   }
 
-  const onMove = (e: MouseEvent) => {
+  const onMove = (e: PointerEvent) => {
     state.pointer = screenToWorld(e.clientX, e.clientY)
   }
 
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   canvas.addEventListener('contextmenu', onContextMenu)
-  canvas.addEventListener('click', onClick)
-  canvas.addEventListener('mousemove', onMove)
+  canvas.addEventListener('pointerdown', onPointerDown)
+  canvas.addEventListener('pointermove', onMove)
 
   return () => {
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     canvas.removeEventListener('contextmenu', onContextMenu)
-    canvas.removeEventListener('click', onClick)
-    canvas.removeEventListener('mousemove', onMove)
+    canvas.removeEventListener('pointerdown', onPointerDown)
+    canvas.removeEventListener('pointermove', onMove)
   }
 }

@@ -85,6 +85,15 @@ export function dealDamage(
     target.alive = false
     target.deaths += 1
     attacker.kills += 1
+    if (target.isPlayer) {
+      target.targetId = null
+      target.moveTo = null
+      target.attackMoveTo = null
+      target.pendingWard = null
+    }
+    for (const u of world.units) {
+      if (u.targetId === target.id) u.targetId = null
+    }
   }
   return dmg
 }

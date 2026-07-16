@@ -24,7 +24,7 @@ const ACTIVE_NAMES: Record<ActiveKind, string> = {
   speed: 'Ghostblade',
 }
 
-function makeAbilities(rng: ReturnType<typeof createRng>): Record<AbilitySlot, AbilityState> {
+export function makeAbilities(rng: ReturnType<typeof createRng>): Record<AbilitySlot, AbilityState> {
   const mk = (slot: AbilitySlot, lo: number, hi: number): AbilityState => ({
     slot,
     cooldown: 0,
@@ -40,7 +40,7 @@ function makeAbilities(rng: ReturnType<typeof createRng>): Record<AbilitySlot, A
   }
 }
 
-function makeActives(kinds: ActiveKind[]): ActiveState[] {
+export function makeActives(kinds: ActiveKind[]): ActiveState[] {
   return kinds.map((kind, i) => ({
     slot: (i + 1) as 1 | 2 | 3,
     kind,
@@ -50,7 +50,7 @@ function makeActives(kinds: ActiveKind[]): ActiveState[] {
   }))
 }
 
-function makeItems(rng: ReturnType<typeof createRng>, activeKinds: ActiveKind[]): ItemSlot[] {
+export function makeItems(rng: ReturnType<typeof createRng>, activeKinds: ActiveKind[]): ItemSlot[] {
   const items: ItemSlot[] = []
   for (const kind of activeKinds) {
     items.push({ id: kind, name: ACTIVE_NAMES[kind], active: kind })
@@ -150,7 +150,10 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
 
 export function scenarioToWorld(scenario: Scenario): World {
   const rng = createRng(scenario.seed ^ 0x9e3779b9)
-  const arena = { w: 1100, h: 700 }
+  const arena =
+    scenario.mode === 'laning'
+      ? { w: 520, h: 920 }
+      : { w: 1100, h: 700 }
   const units: Unit[] = scenario.units.map((su, id) => {
     const stats = statsFor(su.archetype, su.power)
     return {
@@ -190,19 +193,25 @@ export function scenarioToWorld(scenario: Scenario): World {
 
   return {
     seed: scenario.seed,
+    mode: scenario.mode,
     tick: 0,
     time: 0,
     duration: scenario.durationSec,
     arena,
     units,
+    minions: [],
     wards: [],
     projectiles: [],
+    swipes: [],
     playerId: scenario.playerSlot,
     attackChampionsOnly: false,
     ended: false,
     result: null,
     nextProjectileId: 1,
     nextWardId: 1,
+    nextMinionId: 1,
     floaters: [],
+    playerCs: 0,
+    waveTimer: 4,
   }
 }
