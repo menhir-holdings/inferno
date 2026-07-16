@@ -1,4 +1,4 @@
-import { UNIT_DIAMETER, UNIT_RADIUS } from './constants'
+import { UNIT_DIAMETER, UNIT_RADIUS, WARD_CAST_RANGE } from './constants'
 import { approachPoint, formationOffset, resolveUnitCollisions } from './collision'
 import {
   abilityDamage,
@@ -12,7 +12,7 @@ import {
   clampToArena,
   norm,
 } from './combat'
-import type { AbilitySlot, Unit, World } from './types'
+import type { AbilitySlot, Unit, Vec2, World } from './types'
 
 const DT = 1 / 60
 
@@ -249,6 +249,29 @@ export function placeWard(world: World, u: Unit, pos: { x: number; y: number }) 
   return true
 }
 
+export function queueWard(world: World, u: Unit, pos: Vec2): boolean {
+  if (!u.alive) return false
+  if (dist(u.pos, pos) <= WARD_CAST_RANGE) {
+    u.pendingWard = null
+    return placeWard(world, u, pos)
+  }
+  u.pendingWard = { ...pos }
+  u.moveTo = approachPoint(u.pos, pos, WARD_CAST_RANGE * 0.92)
+  u.attackMoveTo = null
+  return true
+}
+
+function tickPendingWard(world: World, u: Unit) {
+  if (!u.pendingWard) return
+  if (dist(u.pos, u.pendingWard) <= WARD_CAST_RANGE) {
+    placeWard(world, u, u.pendingWard)
+    u.pendingWard = null
+    u.moveTo = null
+  } else if (!u.moveTo) {
+    u.moveTo = approachPoint(u.pos, u.pendingWard, WARD_CAST_RANGE * 0.92)
+  }
+}
+
 function aiTick(world: World, u: Unit) {
   if (u.isPlayer || !u.alive) return
   const foe = nearestEnemy(world, u)
@@ -324,6 +347,7 @@ export function tickWorld(world: World) {
   world.time += DT
   if (world.time >= world.duration) {
     world.ended = true
+    world.result = 'timeout'
     return
   }
 
@@ -332,6 +356,7 @@ export function tickWorld(world: World) {
   for (const u of world.units) {
     if (!u.alive) continue
     tickCooldowns(u)
+    if (u.isPlayer) tickPendingWard(world, u)
     aiTick(world, u)
 
     if (u.attackMoveTo) {
@@ -367,7 +392,15 @@ export function tickWorld(world: World) {
 
   const blueAlive = world.units.some((u) => u.alive && u.team === 'blue')
   const redAlive = world.units.some((u) => u.alive && u.team === 'red')
-  if (!blueAlive || !redAlive) world.ended = true
+  if (!blueAlive || !redAlive) {
+    world.ended = true
+    const player = world.units[world.playerId]!
+    if (player.team === 'blue') {
+      world.result = redAlive ? 'defeat' : 'victory'
+    } else {
+      world.result = blueAlive ? 'defeat' : 'victory'
+    }
+  }
 }
 
 export { DT }

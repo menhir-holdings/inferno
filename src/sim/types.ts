@@ -91,6 +91,8 @@ export interface Unit {
   moveFactor: number
   /** temporary self speed boost seconds remaining */
   speedBoostTtl: number
+  /** walk into range then drop ward */
+  pendingWard: Vec2 | null
   damageDealt: number
   damageTaken: number
   focusScore: number
@@ -126,6 +128,8 @@ export interface Projectile {
   radius: number
 }
 
+export type FightResult = 'victory' | 'defeat' | 'timeout' | null
+
 export interface World {
   seed: number
   tick: number
@@ -138,6 +142,7 @@ export interface World {
   playerId: number
   attackChampionsOnly: boolean
   ended: boolean
+  result: FightResult
   nextProjectileId: number
   nextWardId: number
   floaters: DamageFloater[]

@@ -1,15 +1,14 @@
 import { actionForCode, loadBindings, type Bindings } from './bindings'
-import { castAbility, placeWard, useActive } from '../sim/world'
+import { castAbility, queueWard, useActive } from '../sim/world'
 import { approachPoint } from '../sim/collision'
 import { attackStopDist, unitAt } from '../sim/combat'
-import type { InputFrame, World } from '../sim/types'
+import type { InputFrame, Unit, World } from '../sim/types'
 
-export type TargetingMode = 'none' | 'attackMove' | 'attackMoveRange' | 'ward' | 'ability'
+export type TargetingMode = 'none' | 'attackMoveRange'
 
 export interface InputState {
   bindings: Bindings
   targeting: TargetingMode
-  pendingAbility: 'q' | 'w' | 'e' | 'r' | null
   showScoreboard: boolean
   showRange: boolean
   pointer: { x: number; y: number }
@@ -20,7 +19,6 @@ export function createInputState(): InputState {
   return {
     bindings: loadBindings(),
     targeting: 'none',
-    pendingAbility: null,
     showScoreboard: false,
     showRange: false,
     pointer: { x: 0, y: 0 },
@@ -32,17 +30,17 @@ function record(state: InputState, world: World, frame: Omit<InputFrame, 't'>) {
   state.recording.push({ t: world.time, ...frame })
 }
 
+/** Same order as X + LMB — attack-move to ground point. */
+export function issueAttackMove(player: Unit, pos: { x: number; y: number }) {
+  player.targetId = null
+  player.moveTo = null
+  player.attackMoveTo = { ...pos }
+  player.pendingWard = null
+}
+
 export function targetingLabel(mode: TargetingMode): string | null {
-  switch (mode) {
-    case 'attackMove':
-      return 'A-MOVE'
-    case 'attackMoveRange':
-      return 'RANGE'
-    case 'ward':
-      return 'WARD'
-    default:
-      return null
-  }
+  if (mode === 'attackMoveRange') return 'RANGE'
+  return null
 }
 
 export function cancelTargeting(state: InputState) {
@@ -64,6 +62,7 @@ export function attachInput(
 
     if (e.code === 'Escape') {
       cancelTargeting(state)
+      player.pendingWard = null
       return
     }
 
@@ -81,17 +80,19 @@ export function attachInput(
         player.moveTo = null
         player.attackMoveTo = null
         player.targetId = null
-        state.targeting = 'none'
-        state.showRange = false
+        player.pendingWard = null
+        cancelTargeting(state)
         record(state, world, { type: 'stop' })
         break
-      case 'attackMove':
-        // A: arm attack-move immediately, no range
-        state.targeting = 'attackMove'
-        state.showRange = false
+      case 'attackMove': {
+        // A = X+LMB at cursor, no range ring
+        const pos = state.pointer
+        issueAttackMove(player, pos)
+        cancelTargeting(state)
+        record(state, world, { type: 'amove', x: pos.x, y: pos.y })
         break
+      }
       case 'attackMoveRange':
-        // X: show range, wait for LMB
         state.targeting = 'attackMoveRange'
         state.showRange = true
         break
@@ -115,10 +116,14 @@ export function attachInput(
         }
         break
       }
-      case 'ward':
-        state.targeting = 'ward'
-        state.showRange = false
+      case 'ward': {
+        const pos = state.pointer
+        if (queueWard(world, player, pos)) {
+          record(state, world, { type: 'ward', x: pos.x, y: pos.y })
+        }
+        cancelTargeting(state)
         break
+      }
       case 'aot':
         world.attackChampionsOnly = !world.attackChampionsOnly
         record(state, world, { type: 'aot' })
@@ -139,18 +144,19 @@ export function attachInput(
     if (!player?.alive) return
     const pos = screenToWorld(e.clientX, e.clientY)
     state.pointer = pos
-    state.targeting = 'none'
-    state.showRange = false
+    cancelTargeting(state)
 
     const enemy = unitAt(world, pos, 40, player.team === 'blue' ? 'red' : 'blue')
     if (enemy) {
       player.targetId = enemy.id
       player.moveTo = approachPoint(player.pos, enemy.pos, attackStopDist(player))
       player.attackMoveTo = null
+      player.pendingWard = null
       record(state, world, { type: 'attack', x: pos.x, y: pos.y })
     } else {
       player.targetId = null
       player.attackMoveTo = null
+      player.pendingWard = null
       player.moveTo = { ...pos }
       record(state, world, { type: 'move', x: pos.x, y: pos.y })
     }
@@ -165,19 +171,10 @@ export function attachInput(
     const pos = screenToWorld(e.clientX, e.clientY)
     state.pointer = pos
 
-    if (state.targeting === 'attackMove' || state.targeting === 'attackMoveRange') {
-      player.targetId = null
-      player.moveTo = null
-      player.attackMoveTo = { ...pos }
+    if (state.targeting === 'attackMoveRange') {
+      issueAttackMove(player, pos)
       record(state, world, { type: 'amove', x: pos.x, y: pos.y })
-      state.targeting = 'none'
-      state.showRange = false
-      return
-    }
-    if (state.targeting === 'ward') {
-      placeWard(world, player, pos)
-      record(state, world, { type: 'ward', x: pos.x, y: pos.y })
-      state.targeting = 'none'
+      cancelTargeting(state)
     }
   }
 

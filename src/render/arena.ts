@@ -166,26 +166,6 @@ export class ArenaRenderer {
     view.hpFg.fill({ color: ratio > 0.35 ? COLORS.hpHigh : COLORS.hpLow })
   }
 
-  drawAuras(world: World) {
-    for (const u of world.units) {
-      if (!u.alive) continue
-      if (u.stats.hamperRadius > 0) {
-        const g = new Graphics()
-        g.circle(u.pos.x, u.pos.y, u.stats.hamperRadius)
-        g.stroke({ width: 1.5, color: COLORS.hamper, alpha: 0.22 })
-        g.fill({ color: COLORS.hamper, alpha: 0.04 })
-        this.fxLayer.addChild(g)
-      }
-      if (u.stats.buffRadius > 0) {
-        const g = new Graphics()
-        g.circle(u.pos.x, u.pos.y, u.stats.buffRadius)
-        g.stroke({ width: 1.5, color: COLORS.buff, alpha: 0.18 })
-        g.fill({ color: COLORS.buff, alpha: 0.03 })
-        this.fxLayer.addChild(g)
-      }
-    }
-  }
-
   render(world: World, input: InputState) {
     const player = world.units[world.playerId]
     const sorted = [...world.units].sort((a, b) => a.pos.y - b.pos.y)
@@ -199,7 +179,6 @@ export class ArenaRenderer {
 
     this.fxLayer.removeChildren()
     this.fxLayer.addChild(this.rangeRing)
-    this.drawAuras(world)
 
     for (const p of world.projectiles) {
       const g = new Graphics()

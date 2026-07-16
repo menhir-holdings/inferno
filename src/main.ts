@@ -12,7 +12,7 @@ import {
 } from './input/bindings'
 import { tickWorld, DT } from './sim/world'
 import { scoreWorld } from './score/score'
-import type { Scenario, ScoreBreakdown, World } from './sim/types'
+import type { FightResult, Scenario, ScoreBreakdown, World } from './sim/types'
 
 const appRoot = document.querySelector<HTMLDivElement>('#app')!
 
@@ -146,6 +146,7 @@ function frame(now: number) {
 
   if (world.ended) {
     running = false
+    showOutcome(world.result)
     showDebrief(scoreWorld(world))
     return
   }
@@ -170,7 +171,7 @@ function updateHud() {
     ${targetLine}
     ${modeBadge}
     <div class="stat">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'off'}</strong></div>
-    <div class="hint">RMB · A · X · S · Tab · \` · Esc cancel</div>
+    <div class="hint">RMB · A (A-move) · X+click · 4 ward · S · Tab · Esc</div>
   `
 }
 
@@ -244,13 +245,34 @@ function syncScoreboard() {
   </table>`
 }
 
+function showOutcome(result: FightResult) {
+  const host = document.getElementById('canvas-host')
+  if (!host) return
+  host.querySelector('.outcome')?.remove()
+  if (!result || result === 'timeout') return
+  const box = el('div', `outcome outcome-${result}`)
+  box.innerHTML =
+    result === 'victory'
+      ? '<span class="outcome-label">VICTORY</span><span class="outcome-sub">Enemy team eliminated</span>'
+      : '<span class="outcome-label">DEFEAT</span><span class="outcome-sub">Your team fell</span>'
+  host.append(box)
+}
+
 function showDebrief(score: ScoreBreakdown) {
   const shell = appRoot.querySelector('.shell')
-  if (!shell || !scenario) return
+  if (!shell || !scenario || !world) return
   document.querySelector('.debrief')?.remove()
   const box = el('div', 'debrief')
+  const headline =
+    world.result === 'victory'
+      ? 'Victory'
+      : world.result === 'defeat'
+        ? 'Defeat'
+        : world.result === 'timeout'
+          ? 'Time'
+          : 'Round over'
   box.innerHTML = `
-    <h2>Round over — ${score.total}</h2>
+    <h2>${headline} — ${score.total}</h2>
     <div class="scores">
       <div><strong>${score.focus}</strong><span>Focus</span></div>
       <div><strong>${score.spacing}</strong><span>Spacing</span></div>
@@ -281,7 +303,7 @@ function openBindingsModal() {
   const list = modal.querySelector('.bind-list')!
   const labels: Record<ActionId, string> = {
     stop: 'Stop',
-    attackMove: 'Attack-move (A)',
+    attackMove: 'Attack-move at cursor (A)',
     attackMoveRange: 'Attack-move + range (X)',
     abilityQ: 'Ability Q',
     abilityW: 'Ability W',

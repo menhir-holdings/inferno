@@ -4,6 +4,9 @@ export const UNIT_DIAMETER = UNIT_RADIUS * 2
 /** Inner circle for icon fill (inside ring stroke) */
 export const ICON_RADIUS = 24
 
+/** LoL-ish ward cast range */
+export const WARD_CAST_RANGE = 600
+
 export const COLORS = {
   ally: 0x5ec8ff,
   foe: 0xff5a4a,
