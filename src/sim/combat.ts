@@ -1,4 +1,10 @@
+import { UNIT_DIAMETER } from './constants'
 import type { AbilitySlot, Unit, Vec2, World } from './types'
+
+export function attackStopDist(u: Unit): number {
+  if (u.stats.melee || u.stats.aaRange < 200) return UNIT_DIAMETER * 0.98
+  return u.stats.aaRange * 0.92
+}
 
 export function dist(a: Vec2, b: Vec2): number {
   const dx = a.x - b.x
@@ -56,6 +62,7 @@ export function dealDamage(attacker: Unit, target: Unit, raw: number, isFocus = 
   const dmg = Math.max(1, raw * mult * (1 - effectiveResist(target)))
   target.hp -= dmg
   target.damageTaken += dmg
+  target.hitFlashTtl = 0.12
   attacker.damageDealt += dmg
   if (isFocus && target.archetype !== 'tank') {
     attacker.focusScore += dmg * (target.hp / target.stats.maxHp < 0.4 ? 1.4 : 1)

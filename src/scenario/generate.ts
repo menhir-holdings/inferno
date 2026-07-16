@@ -1,5 +1,7 @@
 import { statsFor } from '../sim/archetypes'
 import { CHAMPIONS, PASSIVE_ITEMS } from '../sim/champions'
+import { separatePositions } from '../sim/collision'
+import { UNIT_DIAMETER } from '../sim/constants'
 import { createRng } from '../sim/rng'
 import type {
   AbilitySlot,
@@ -65,12 +67,11 @@ function startPos(
   index: number,
   arenaW: number,
   arenaH: number,
-  rng: ReturnType<typeof createRng>,
 ) {
-  const side = team === 'blue' ? 0.22 : 0.78
-  const col = side * arenaW + (rng.next() - 0.5) * 80
-  const row = arenaH * (0.2 + index * 0.15) + (rng.next() - 0.5) * 40
-  return { x: col, y: Math.max(60, Math.min(arenaH - 60, row)) }
+  const side = team === 'blue' ? 0.2 : 0.8
+  const col = side * arenaW
+  const row = arenaH * (0.18 + ((index + 0.5) / 5) * 0.64)
+  return { x: col, y: row }
 }
 
 export function generateScenario(seed: number, durationSec = 45): Scenario {
@@ -87,13 +88,12 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
   // Rough team comps: tank, carry, mage/assassin, brawler, support each side
   const roles: Archetype[] = ['tank', 'ranger', 'mage', 'brawler', 'support']
   const used = new Set<string>()
-  const units: ScenarioUnit[] = []
   const arenaW = 1100
   const arenaH = 700
+  const rawPositions: { pos: { x: number; y: number }; unit: Omit<ScenarioUnit, 'startPos'> }[] = []
 
   for (const team of ['blue', 'red'] as const) {
     const shuffledRoles = rng.shuffle([...roles])
-    // Swap one role sometimes for variety
     if (rng.next() < 0.35) {
       shuffledRoles[2] = rng.pick(['assassin', 'mage'] as const)
     }
@@ -108,22 +108,34 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
       for (let a = 0; a < nActives; a++) {
         activeKinds.push(rng.pick(ACTIVE_KINDS))
       }
-      units.push({
-        champId: champ.id,
-        champName: champ.name,
-        team,
-        archetype: champ.archetype,
-        power,
-        level,
-        kills: rng.int(0, Math.max(1, power)),
-        deaths: rng.int(0, 5),
-        assists: rng.int(0, 8),
-        items: makeItems(rng, activeKinds),
-        activeKinds,
-        startPos: startPos(team, i, arenaW, arenaH, rng),
+      rawPositions.push({
+        pos: startPos(team, i, arenaW, arenaH),
+        unit: {
+          champId: champ.id,
+          champName: champ.name,
+          team,
+          archetype: champ.archetype,
+          power,
+          level,
+          kills: rng.int(0, Math.max(1, power)),
+          deaths: rng.int(0, 5),
+          assists: rng.int(0, 8),
+          items: makeItems(rng, activeKinds),
+          activeKinds,
+        },
       })
     })
   }
+
+  const separated = separatePositions(
+    rawPositions.map((r) => r.pos),
+    { w: arenaW, h: arenaH },
+    UNIT_DIAMETER,
+  )
+  const units: ScenarioUnit[] = rawPositions.map((r, i) => ({
+    ...r.unit,
+    startPos: separated[i]!,
+  }))
 
   const playerSlot = rng.int(0, 4) // blue team slot
 
@@ -171,6 +183,7 @@ export function scenarioToWorld(scenario: Scenario): World {
       damageDealt: 0,
       damageTaken: 0,
       focusScore: 0,
+      hitFlashTtl: 0,
     }
   })
 

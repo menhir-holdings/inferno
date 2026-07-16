@@ -1,4 +1,17 @@
-import { abilityDamage, aaDamage, dealDamage, dist, enemiesOf, nearestEnemy, alliesOf, clampToArena, norm } from './combat'
+import { UNIT_DIAMETER, UNIT_RADIUS } from './constants'
+import { approachPoint, formationOffset, resolveUnitCollisions } from './collision'
+import {
+  abilityDamage,
+  aaDamage,
+  attackStopDist,
+  dealDamage,
+  dist,
+  enemiesOf,
+  nearestEnemy,
+  alliesOf,
+  clampToArena,
+  norm,
+} from './combat'
 import type { AbilitySlot, Unit, World } from './types'
 
 const DT = 1 / 60
@@ -13,7 +26,6 @@ function applyAuraEffects(world: World) {
 
   for (const src of world.units) {
     if (!src.alive) continue
-    // Tank / support hamper
     if (src.stats.hamperRadius > 0 && src.stats.hamperStrength > 0) {
       for (const foe of enemiesOf(world, src)) {
         if (dist(src.pos, foe.pos) <= src.stats.hamperRadius) {
@@ -21,7 +33,6 @@ function applyAuraEffects(world: World) {
         }
       }
     }
-    // Support buffs
     if (src.stats.buffRadius > 0) {
       for (const ally of [src, ...alliesOf(world, src)]) {
         if (dist(src.pos, ally.pos) <= src.stats.buffRadius) {
@@ -33,20 +44,20 @@ function applyAuraEffects(world: World) {
   }
 }
 
-function moveUnit(world: World, u: Unit, dest: { x: number; y: number }) {
+function stepMove(world: World, u: Unit, dest: { x: number; y: number }, stopDist = 0): boolean {
   const d = dist(u.pos, dest)
-  if (d < 4) {
-    u.pos = { ...dest }
-    return true
-  }
+  if (d <= stopDist + 1.5) return true
   const boost = u.speedBoostTtl > 0 ? 1.35 : 1
   const speed = u.stats.moveSpeed * u.moveFactor * boost * DT
+  const travel = Math.min(speed, Math.max(0, d - stopDist))
+  if (travel < 0.5) return true
   const n = norm(u.pos, dest)
   u.pos = clampToArena(
-    { x: u.pos.x + n.x * Math.min(speed, d), y: u.pos.y + n.y * Math.min(speed, d) },
+    { x: u.pos.x + n.x * travel, y: u.pos.y + n.y * travel },
     world.arena,
+    UNIT_RADIUS,
   )
-  return false
+  return dist(u.pos, dest) <= stopDist + 1.5
 }
 
 function tryAutoAttack(world: World, u: Unit) {
@@ -56,33 +67,35 @@ function tryAutoAttack(world: World, u: Unit) {
     u.targetId = null
     return
   }
-  if (world.attackChampionsOnly && u.isPlayer && false) {
-    // always champions in this sim
-  }
   const range = u.stats.aaRange
-  if (dist(u.pos, target.pos) > range + 8) {
-    // walk into range
-    u.moveTo = { ...target.pos }
+  const stop = attackStopDist(u)
+  const d = dist(u.pos, target.pos)
+  if (d > range + 4) {
+    const goal = approachPoint(u.pos, target.pos, stop)
+    u.moveTo = goal
+    return
+  }
+  if (d > stop + 2 && u.stats.melee) {
+    u.moveTo = approachPoint(u.pos, target.pos, stop)
     return
   }
   u.moveTo = null
   const dmg = aaDamage(u)
   if (u.stats.melee || range < 200) {
-    dealDamage(u, target, dmg, true)
+    dealDamage(u, target, dmg, target.archetype !== 'tank')
   } else {
     const n = norm(u.pos, target.pos)
-    const speed = 900
     world.projectiles.push({
       id: world.nextProjectileId++,
       fromId: u.id,
       toId: target.id,
       pos: { ...u.pos },
-      vel: { x: n.x * speed, y: n.y * speed },
+      vel: { x: n.x * 920, y: n.y * 920 },
       damage: dmg,
-      ttl: 1.2,
+      ttl: 1.1,
       kind: 'aa',
       team: u.team,
-      radius: 8,
+      radius: 6,
     })
   }
   u.aaCooldown = 1 / u.stats.aaSpeed
@@ -97,15 +110,15 @@ function tickProjectiles(world: World) {
     let hit = false
     if (p.toId != null) {
       const t = world.units[p.toId]
-      if (t && t.alive && dist(p.pos, t.pos) < 28) {
+      if (t && t.alive && dist(p.pos, t.pos) < UNIT_RADIUS) {
         const atk = world.units[p.fromId]
-        if (atk) dealDamage(atk, t, p.damage, p.kind !== 'aa' || t.archetype !== 'tank')
+        if (atk) dealDamage(atk, t, p.damage, t.archetype !== 'tank')
         hit = true
       }
     } else {
       for (const t of world.units) {
         if (!t.alive || t.team === p.team) continue
-        if (dist(p.pos, t.pos) < p.radius + 24) {
+        if (dist(p.pos, t.pos) < p.radius + UNIT_RADIUS * 0.7) {
           const atk = world.units[p.fromId]
           if (atk) dealDamage(atk, t, p.damage, true)
           hit = true
@@ -121,6 +134,7 @@ function tickProjectiles(world: World) {
 function tickCooldowns(u: Unit) {
   if (u.aaCooldown > 0) u.aaCooldown -= DT
   if (u.speedBoostTtl > 0) u.speedBoostTtl -= DT
+  if (u.hitFlashTtl > 0) u.hitFlashTtl -= DT
   for (const slot of ['q', 'w', 'e', 'r'] as AbilitySlot[]) {
     const a = u.abilities[slot]
     if (!a.ready && !a.spent) {
@@ -142,31 +156,54 @@ function tickCooldowns(u: Unit) {
   }
 }
 
-export function castAbility(world: World, u: Unit, slot: AbilitySlot, aim: { x: number; y: number } | null) {
+function priorityTarget(world: World, u: Unit): Unit | null {
+  const foes = enemiesOf(world, u)
+  if (!foes.length) return null
+  const carries = foes.filter((f) => f.archetype !== 'tank' && f.archetype !== 'support')
+  const pool = carries.length ? carries : foes
+  return pool.sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0] ?? null
+}
+
+function teamCentroid(world: World, team: Unit['team']): { x: number; y: number } {
+  const mates = world.units.filter((u) => u.alive && u.team === team)
+  if (!mates.length) return { x: world.arena.w / 2, y: world.arena.h / 2 }
+  const sx = mates.reduce((s, u) => s + u.pos.x, 0)
+  const sy = mates.reduce((s, u) => s + u.pos.y, 0)
+  return { x: sx / mates.length, y: sy / mates.length }
+}
+
+export function castAbility(
+  world: World,
+  u: Unit,
+  slot: AbilitySlot,
+  aim: { x: number; y: number } | null,
+) {
   const ab = u.abilities[slot]
   if (!ab.ready || ab.spent || !u.alive) return false
   const dmg = abilityDamage(u, slot)
   const target =
     aim != null
-      ? world.units.find(
-          (o) => o.alive && o.team !== u.team && dist(o.pos, aim) < 50,
-        ) ?? nearestEnemy(world, u)
+      ? world.units.find((o) => o.alive && o.team !== u.team && dist(o.pos, aim) < UNIT_RADIUS + 8) ??
+        nearestEnemy(world, u)
       : nearestEnemy(world, u)
   if (!target) return false
 
   if (slot === 'r') {
     dealDamage(u, target, dmg, true)
-    // small AOE splash
     for (const o of enemiesOf(world, u)) {
-      if (o.id !== target.id && dist(target.pos, o.pos) < 140) {
+      if (o.id !== target.id && dist(target.pos, o.pos) < 150) {
         dealDamage(u, o, dmg * 0.35, false)
       }
+    }
+    if (u.archetype === 'assassin') {
+      u.pos = approachPoint(target.pos, u.pos, UNIT_DIAMETER)
+      u.pos = clampToArena(u.pos, world.arena, UNIT_RADIUS)
     }
     ab.spent = true
     ab.ready = false
   } else {
     const n = norm(u.pos, target.pos)
-    const speed = 750
+    const speed = u.archetype === 'mage' ? 820 : 700
     world.projectiles.push({
       id: world.nextProjectileId++,
       fromId: u.id,
@@ -174,10 +211,10 @@ export function castAbility(world: World, u: Unit, slot: AbilitySlot, aim: { x: 
       pos: { ...u.pos },
       vel: { x: n.x * speed, y: n.y * speed },
       damage: dmg,
-      ttl: 0.9,
+      ttl: slot === 'w' ? 1.1 : 0.85,
       kind: 'ability',
       team: u.team,
-      radius: slot === 'w' ? 40 : 22,
+      radius: slot === 'w' ? 44 : u.archetype === 'mage' ? 18 : 26,
     })
     ab.ready = false
     ab.cooldown = ab.maxCooldown
@@ -189,7 +226,7 @@ export function useActive(world: World, u: Unit, slot: 1 | 2 | 3) {
   const act = u.actives.find((a) => a.slot === slot)
   if (!act || !act.ready || !u.alive) return false
   if (act.kind === 'burst') {
-    const t = nearestEnemy(world, u)
+    const t = priorityTarget(world, u) ?? nearestEnemy(world, u)
     if (t) dealDamage(u, t, u.stats.abilityPower * 1.6, true)
   } else if (act.kind === 'shield') {
     u.hp = Math.min(u.stats.maxHp, u.hp + u.stats.maxHp * 0.22)
@@ -219,49 +256,65 @@ function aiTick(world: World, u: Unit) {
 
   const d = dist(u.pos, foe.pos)
   const range = u.stats.aaRange
+  const stop = attackStopDist(u)
+  const focus = priorityTarget(world, u) ?? foe
+  const offset = formationOffset(u.id, 28)
 
   if (u.archetype === 'support') {
-    const ally = alliesOf(world, u).sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0]
-    if (ally && ally.hp / ally.stats.maxHp < 0.6) {
-      u.moveTo = { ...ally.pos }
-      u.targetId = foe.id
+    const hurt = alliesOf(world, u)
+      .filter((a) => a.archetype !== 'tank')
+      .sort((a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp)[0]
+    if (hurt && hurt.hp / hurt.stats.maxHp < 0.55) {
+      const behind = approachPoint(hurt.pos, foe.pos, UNIT_DIAMETER * 1.5)
+      u.moveTo = { x: behind.x + offset.x * 0.4, y: behind.y + offset.y * 0.4 }
     } else {
-      u.attackMoveTo = { x: foe.pos.x - (foe.pos.x - u.pos.x) * 0.3, y: foe.pos.y }
-      u.targetId = foe.id
+      const centroid = teamCentroid(world, u.team)
+      u.moveTo = {
+        x: centroid.x + offset.x,
+        y: centroid.y + offset.y,
+      }
     }
-  } else if (u.archetype === 'tank' || u.archetype === 'brawler') {
-    u.targetId = foe.id
-    u.moveTo = { ...foe.pos }
+    u.targetId = focus.id
+  } else if (u.archetype === 'tank') {
+    const front = approachPoint(foe.pos, teamCentroid(world, u.team === 'blue' ? 'red' : 'blue'), stop)
+    u.targetId = focus.id
+    u.moveTo = { x: front.x + offset.x * 0.5, y: front.y + offset.y * 0.5 }
+  } else if (u.archetype === 'brawler') {
+    u.targetId = focus.id
+    u.moveTo = approachPoint(u.pos, focus.pos, stop)
+    u.moveTo = {
+      x: u.moveTo.x + offset.x * 0.3,
+      y: u.moveTo.y + offset.y * 0.3,
+    }
   } else if (u.archetype === 'ranger' || u.archetype === 'mage') {
-    if (d < range * 0.55) {
+    u.targetId = focus.id
+    const sweet = range * 0.82
+    if (d < sweet * 0.55) {
       const n = norm(foe.pos, u.pos)
       u.moveTo = clampToArena(
-        { x: u.pos.x + n.x * 80, y: u.pos.y + n.y * 80 },
+        { x: u.pos.x + n.x * 90 + offset.x * 0.2, y: u.pos.y + n.y * 90 + offset.y * 0.2 },
         world.arena,
+        UNIT_RADIUS,
       )
-    } else if (d > range * 0.95) {
-      u.moveTo = { ...foe.pos }
+    } else if (d > sweet) {
+      u.moveTo = approachPoint(u.pos, focus.pos, sweet)
     } else {
       u.moveTo = null
     }
-    u.targetId = foe.id
   } else {
-    // assassin
-    const carry = enemiesOf(world, u).sort(
-      (a, b) => a.hp / a.stats.maxHp - b.hp / b.stats.maxHp,
-    )[0]
-    const focus = carry ?? foe
     u.targetId = focus.id
-    u.moveTo = { ...focus.pos }
+    u.moveTo = approachPoint(u.pos, focus.pos, stop)
   }
 
-  // opportunistic abilities
-  if (u.abilities.q.ready && d < range * 1.2) castAbility(world, u, 'q', foe.pos)
-  if (u.abilities.w.ready && d < range * 1.1 && world.tick % 90 === u.id) {
-    castAbility(world, u, 'w', foe.pos)
+  if (u.abilities.q.ready && d < range * 1.15) castAbility(world, u, 'q', focus.pos)
+  if (u.abilities.e.ready && u.archetype === 'assassin' && d < range * 1.3) {
+    castAbility(world, u, 'e', focus.pos)
   }
-  if (u.abilities.r.ready && !u.abilities.r.spent && foe.hp / foe.stats.maxHp < 0.45) {
-    castAbility(world, u, 'r', foe.pos)
+  if (u.abilities.w.ready && world.tick % 120 === u.id % 120) {
+    castAbility(world, u, 'w', focus.pos)
+  }
+  if (u.abilities.r.ready && !u.abilities.r.spent && focus.hp / focus.stats.maxHp < 0.5) {
+    castAbility(world, u, 'r', focus.pos)
   }
 }
 
@@ -283,23 +336,26 @@ export function tickWorld(world: World) {
 
     if (u.attackMoveTo) {
       const near = enemiesOf(world, u)
-        .filter((o) => dist(u.pos, o.pos) <= u.stats.aaRange + 20)
+        .filter((o) => dist(u.pos, o.pos) <= u.stats.aaRange + UNIT_RADIUS)
         .sort((a, b) => dist(u.pos, a.pos) - dist(u.pos, b.pos))[0]
       if (near) {
         u.targetId = near.id
         u.attackMoveTo = null
-        u.moveTo = null
+        u.moveTo = approachPoint(u.pos, near.pos, attackStopDist(u))
       } else {
-        const arrived = moveUnit(world, u, u.attackMoveTo)
+        const arrived = stepMove(world, u, u.attackMoveTo, UNIT_RADIUS)
         if (arrived) u.attackMoveTo = null
       }
     } else if (u.moveTo) {
-      const arrived = moveUnit(world, u, u.moveTo)
+      const stop = u.targetId != null ? attackStopDist(u) : UNIT_RADIUS * 0.5
+      const arrived = stepMove(world, u, u.moveTo, stop)
       if (arrived) u.moveTo = null
     }
 
     tryAutoAttack(world, u)
   }
+
+  resolveUnitCollisions(world)
 
   for (const w of world.wards) w.ttl -= DT
   world.wards = world.wards.filter((w) => w.ttl > 0)

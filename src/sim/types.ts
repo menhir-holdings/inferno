@@ -94,6 +94,8 @@ export interface Unit {
   damageDealt: number
   damageTaken: number
   focusScore: number
+  /** brief white flash on hit */
+  hitFlashTtl: number
 }
 
 export interface Ward {

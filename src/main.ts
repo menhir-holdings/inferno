@@ -1,8 +1,7 @@
 import './style.css'
 import { createApp, ArenaRenderer } from './render/arena'
 import { generateScenario, scenarioToWorld } from './scenario/generate'
-import { downloadScenario, saveScenarioLocal } from './scenario/serialize'
-import { attachInput, createInputState } from './input/controller'
+import { attachInput, createInputState, targetingLabel } from './input/controller'
 import {
   DEFAULT_BINDINGS,
   labelForCode,
@@ -70,8 +69,7 @@ function showHome() {
   const fire = el('button', 'btn-fire', 'Enter Teamfight') as HTMLButtonElement
   fire.addEventListener('click', () => startTeamfight(lastScenarioSeed))
   const soon = el('ul', 'soon-list')
-  soon.innerHTML =
-    '<li>Laning Phase — wave, trade, all-in reads</li><li>Jungle — map state → path &amp; fight</li>'
+  soon.innerHTML = '<li>More modes shelved — teamfight only for now</li>'
   cta.append(fire, soon)
   hero.append(cta)
   shell.append(hero)
@@ -88,7 +86,7 @@ async function startTeamfight(seed: number, existing?: Scenario) {
   stopLoop()
   cleanupFight()
   lastScenarioSeed = seed
-  scenario = existing ?? generateScenario(seed, 45)
+  scenario = existing ?? generateScenario(seed, 60)
   world = scenarioToWorld(scenario)
   inputState.recording = []
   inputState.targeting = 'none'
@@ -159,12 +157,20 @@ function updateHud() {
   if (!bar || !world) return
   const p = world.units[world.playerId]!
   const remain = Math.max(0, world.duration - world.time)
+  const target = p.targetId != null ? world.units[p.targetId] : null
+  const mode = targetingLabel(inputState.targeting)
+  const modeBadge = mode ? `<div class="stat mode-pill"><strong>${mode}</strong></div>` : ''
+  const targetLine = target?.alive
+    ? `<div class="stat">Target <strong>${target.champName}</strong></div>`
+    : '<div class="stat">Target <strong>—</strong></div>'
   bar.innerHTML = `
     <div class="stat">Time <strong>${remain.toFixed(1)}s</strong></div>
-    <div class="stat">Playing <strong>${p.champName}</strong> · ${p.archetype} · P${p.power}</div>
-    <div class="stat">HP <strong>${Math.max(0, Math.round(p.hp))}</strong> / ${p.stats.maxHp}</div>
-    <div class="stat">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'OFF'}</strong></div>
-    <div class="hint">RMB move/attack · A A-move · X range A-move · S stop · Tab scoreboard · \` AOT</div>
+    <div class="stat">${p.champName} <strong>${p.archetype}</strong></div>
+    <div class="stat">HP <strong>${Math.max(0, Math.round(p.hp))}</strong>/${p.stats.maxHp}</div>
+    ${targetLine}
+    ${modeBadge}
+    <div class="stat">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'off'}</strong></div>
+    <div class="hint">RMB · A · X · S · Tab · \` · Esc cancel</div>
   `
 }
 
@@ -172,10 +178,10 @@ function updateAbilityBar() {
   const bar = document.getElementById('ability-bar')
   if (!bar || !world) return
   const p = world.units[world.playerId]!
-  const slots: { key: string; label: string; ready: boolean; spent?: boolean; cd?: number }[] = [
-    { key: 'Q', label: 'Q', ready: p.abilities.q.ready, cd: p.abilities.q.cooldown },
-    { key: 'W', label: 'W', ready: p.abilities.w.ready, cd: p.abilities.w.cooldown },
-    { key: 'E', label: 'E', ready: p.abilities.e.ready, cd: p.abilities.e.cooldown },
+  const slots: { key: string; label: string; ready: boolean; spent?: boolean; cd?: number; max?: number }[] = [
+    { key: 'Q', label: 'Q', ready: p.abilities.q.ready, cd: p.abilities.q.cooldown, max: p.abilities.q.maxCooldown },
+    { key: 'W', label: 'W', ready: p.abilities.w.ready, cd: p.abilities.w.cooldown, max: p.abilities.w.maxCooldown },
+    { key: 'E', label: 'E', ready: p.abilities.e.ready, cd: p.abilities.e.cooldown, max: p.abilities.e.maxCooldown },
     { key: 'R', label: 'R', ready: p.abilities.r.ready && !p.abilities.r.spent, spent: p.abilities.r.spent },
   ]
   for (const a of p.actives) {
@@ -184,25 +190,24 @@ function updateAbilityBar() {
       label: String(a.slot),
       ready: a.ready,
       cd: a.cooldown,
+      max: a.maxCooldown,
     })
   }
   slots.push({ key: '4', label: '4', ready: true })
   bar.innerHTML = slots
     .map((s) => {
-      const cls = [
-        'slot',
-        s.ready ? 'ready' : 'down',
-        s.spent ? 'spent' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')
+      const cls = ['slot', s.ready ? 'ready' : 'down', s.spent ? 'spent' : ''].filter(Boolean).join(' ')
+      const pct =
+        !s.ready && s.cd && s.max && s.max > 0
+          ? `<div class="cd-sweep" style="height:${Math.round((s.cd / s.max) * 100)}%"></div>`
+          : ''
       const cd =
         !s.ready && s.cd && s.cd > 0
           ? `<small>${Math.ceil(s.cd)}</small>`
           : s.key === '4'
             ? '<small>ward</small>'
             : ''
-      return `<div class="${cls}">${s.label}${cd}</div>`
+      return `<div class="${cls}">${pct}<span>${s.label}</span>${cd}</div>`
     })
     .join('')
 }
@@ -258,19 +263,13 @@ function showDebrief(score: ScoreBreakdown) {
     <div class="actions"></div>
   `
   const actions = box.querySelector('.actions')!
-  const replay = el('button', 'btn primary', 'Replay scenario')
-  replay.addEventListener('click', () => startTeamfight(scenario!.seed, scenario!))
-  const regen = el('button', 'btn', 'Regenerate')
+  const again = el('button', 'btn primary', 'Fight again')
+  again.addEventListener('click', () => startTeamfight(scenario!.seed, scenario!))
+  const regen = el('button', 'btn', 'New fight')
   regen.addEventListener('click', () => startTeamfight((Math.random() * 1e9) | 0))
-  const save = el('button', 'btn', 'Save scenario')
-  save.addEventListener('click', () => {
-    saveScenarioLocal(scenario!)
-    downloadScenario(scenario!)
-    save.textContent = 'Saved'
-  })
-  const home = el('button', 'btn', 'Modes')
+  const home = el('button', 'btn', 'Exit')
   home.addEventListener('click', () => showHome())
-  actions.append(replay, regen, save, home)
+  actions.append(again, regen, home)
   shell.append(box)
 }
 

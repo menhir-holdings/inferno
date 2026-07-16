@@ -1,6 +1,7 @@
 import { actionForCode, loadBindings, type Bindings } from './bindings'
 import { castAbility, placeWard, useActive } from '../sim/world'
-import { unitAt } from '../sim/combat'
+import { approachPoint } from '../sim/collision'
+import { attackStopDist, unitAt } from '../sim/combat'
 import type { InputFrame, World } from '../sim/types'
 
 export type TargetingMode = 'none' | 'attackMove' | 'attackMoveRange' | 'ward' | 'ability'
@@ -31,6 +32,24 @@ function record(state: InputState, world: World, frame: Omit<InputFrame, 't'>) {
   state.recording.push({ t: world.time, ...frame })
 }
 
+export function targetingLabel(mode: TargetingMode): string | null {
+  switch (mode) {
+    case 'attackMove':
+      return 'A-MOVE'
+    case 'attackMoveRange':
+      return 'RANGE'
+    case 'ward':
+      return 'WARD'
+    default:
+      return null
+  }
+}
+
+export function cancelTargeting(state: InputState) {
+  state.targeting = 'none'
+  state.showRange = false
+}
+
 export function attachInput(
   canvas: HTMLCanvasElement,
   getWorld: () => World | null,
@@ -42,6 +61,11 @@ export function attachInput(
     if (!world || world.ended) return
     const player = world.units[world.playerId]
     if (!player?.alive) return
+
+    if (e.code === 'Escape') {
+      cancelTargeting(state)
+      return
+    }
 
     const action = actionForCode(state.bindings, e.code)
     if (!action) return
@@ -121,7 +145,7 @@ export function attachInput(
     const enemy = unitAt(world, pos, 40, player.team === 'blue' ? 'red' : 'blue')
     if (enemy) {
       player.targetId = enemy.id
-      player.moveTo = null
+      player.moveTo = approachPoint(player.pos, enemy.pos, attackStopDist(player))
       player.attackMoveTo = null
       record(state, world, { type: 'attack', x: pos.x, y: pos.y })
     } else {

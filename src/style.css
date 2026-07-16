@@ -259,6 +259,13 @@ body {
   font-weight: 400;
 }
 
+.hud-bar .mode-pill strong {
+  color: #12140c;
+  background: var(--phos);
+  padding: 0.1rem 0.45rem;
+  letter-spacing: 0.1em;
+}
+
 .hud-bar .hint {
   color: var(--mute);
   margin-left: auto;
@@ -299,6 +306,32 @@ body {
   display: grid;
   place-items: center;
   position: relative;
+  overflow: hidden;
+}
+
+.slot span {
+  position: relative;
+  z-index: 1;
+}
+
+.slot .cd-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.slot small {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: var(--mute);
 }
 
 .slot.ready {
@@ -310,15 +343,6 @@ body {
 .slot.spent,
 .slot.down {
   opacity: 0.35;
-}
-
-.slot small {
-  position: absolute;
-  bottom: 2px;
-  right: 4px;
-  font-family: var(--font-mono);
-  font-size: 0.55rem;
-  color: var(--mute);
 }
 
 .scoreboard {
