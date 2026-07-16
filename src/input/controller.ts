@@ -1,8 +1,8 @@
 import { actionForCode, loadBindings, type Bindings } from './bindings'
-import { castAbility, queueWard, useActive } from '../sim/world'
+import { castAbility, issueAttackMove, queueWard, useActive } from '../sim/world'
 import { approachPoint } from '../sim/collision'
 import { attackStopDist, unitAt } from '../sim/combat'
-import type { InputFrame, Unit, World } from '../sim/types'
+import type { InputFrame, World } from '../sim/types'
 
 export type TargetingMode = 'none' | 'attackMoveRange'
 
@@ -28,14 +28,6 @@ export function createInputState(): InputState {
 
 function record(state: InputState, world: World, frame: Omit<InputFrame, 't'>) {
   state.recording.push({ t: world.time, ...frame })
-}
-
-/** Same order as X + LMB — attack-move to ground point. */
-export function issueAttackMove(player: Unit, pos: { x: number; y: number }) {
-  player.targetId = null
-  player.moveTo = null
-  player.attackMoveTo = { ...pos }
-  player.pendingWard = null
 }
 
 export function targetingLabel(mode: TargetingMode): string | null {
@@ -85,9 +77,8 @@ export function attachInput(
         record(state, world, { type: 'stop' })
         break
       case 'attackMove': {
-        // A = X+LMB at cursor, no range ring
         const pos = state.pointer
-        issueAttackMove(player, pos)
+        issueAttackMove(world, player, pos)
         cancelTargeting(state)
         record(state, world, { type: 'amove', x: pos.x, y: pos.y })
         break
@@ -173,7 +164,7 @@ export function attachInput(
 
     if (state.targeting === 'attackMoveRange') {
       e.preventDefault()
-      issueAttackMove(player, pos)
+      issueAttackMove(world, player, pos)
       record(state, world, { type: 'amove', x: pos.x, y: pos.y })
       cancelTargeting(state)
     }

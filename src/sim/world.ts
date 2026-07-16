@@ -1,4 +1,4 @@
-import { UNIT_DIAMETER, UNIT_RADIUS, WARD_CAST_RANGE } from './constants'
+import { UNIT_DIAMETER, UNIT_RADIUS, WARD_CAST_RANGE, WARD_COOLDOWN } from './constants'
 import { approachPoint, formationOffset, resolveUnitCollisions } from './collision'
 import {
   abilityDamage,
@@ -17,13 +17,32 @@ import { tickLaning } from './laning'
 
 const DT = 1 / 60
 
-function wardAimFrom(u: Unit, aim: Vec2): Vec2 {
-  const d = dist(u.pos, aim)
-  if (d <= WARD_CAST_RANGE) return aim
-  const n = norm(u.pos, aim)
-  return {
-    x: u.pos.x + n.x * WARD_CAST_RANGE,
-    y: u.pos.y + n.y * WARD_CAST_RANGE,
+function enemiesInAaRange(world: World, u: Unit): Unit[] {
+  return enemiesOf(world, u).filter((o) => dist(u.pos, o.pos) <= u.stats.aaRange)
+}
+
+/** Among units currently in AA range, pick the one closest to aim point. */
+export function bestAttackMoveTarget(world: World, u: Unit, aim: Vec2): Unit | null {
+  const inRange = enemiesInAaRange(world, u)
+  if (!inRange.length) return null
+  return inRange.reduce((best, o) => (dist(o.pos, aim) < dist(best.pos, aim) ? o : best))
+}
+
+/**
+ * LoL A-move: if anything in AA range, attack the one closest to the click;
+ * else walk toward the click until something enters range.
+ */
+export function issueAttackMove(world: World, u: Unit, pos: Vec2) {
+  u.pendingWard = null
+  const pick = bestAttackMoveTarget(world, u, pos)
+  if (pick) {
+    u.targetId = pick.id
+    u.attackMoveTo = null
+    u.moveTo = approachPoint(u.pos, pick.pos, attackStopDist(u))
+  } else {
+    u.targetId = null
+    u.moveTo = null
+    u.attackMoveTo = { ...pos }
   }
 }
 
@@ -168,6 +187,7 @@ function tickCooldowns(u: Unit) {
   if (u.aaCooldown > 0) u.aaCooldown -= DT
   if (u.speedBoostTtl > 0) u.speedBoostTtl -= DT
   if (u.hitFlashTtl > 0) u.hitFlashTtl -= DT
+  if (u.wardCooldown > 0) u.wardCooldown -= DT
   for (const slot of ['q', 'w', 'e', 'r'] as AbilitySlot[]) {
     const a = u.abilities[slot]
     if (!a.ready && !a.spent) {
@@ -283,37 +303,46 @@ export function useActive(world: World, u: Unit, slot: 1 | 2 | 3) {
 
 export function placeWard(world: World, u: Unit, pos: { x: number; y: number }) {
   if (!u.alive) return false
-  if (dist(u.pos, pos) > WARD_CAST_RANGE + 2) return false
+  if (u.wardCooldown > 0) return false
+  if (dist(u.pos, pos) > WARD_CAST_RANGE + 1) return false
   world.wards.push({
     id: world.nextWardId++,
     pos: clampToArena(pos, world.arena),
     team: u.team,
     ttl: 90,
   })
+  u.wardCooldown = WARD_COOLDOWN
   return true
 }
 
+/** Desired ward point. Walk into cast range if needed; never place beyond WARD_CAST_RANGE. */
 export function queueWard(world: World, u: Unit, pos: Vec2): boolean {
-  if (!u.alive) return false
-  const aim = wardAimFrom(u, pos)
+  if (!u.alive || u.wardCooldown > 0) return false
+  const aim = clampToArena(pos, world.arena)
   if (dist(u.pos, aim) <= WARD_CAST_RANGE) {
     u.pendingWard = null
     u.moveTo = null
+    u.attackMoveTo = null
     return placeWard(world, u, aim)
   }
   u.pendingWard = aim
-  u.moveTo = approachPoint(u.pos, aim, WARD_CAST_RANGE * 0.92)
+  u.targetId = null
   u.attackMoveTo = null
+  u.moveTo = approachPoint(u.pos, aim, WARD_CAST_RANGE * 0.92)
   return true
 }
 
 function tickPendingWard(world: World, u: Unit) {
   if (!u.pendingWard) return
+  if (u.wardCooldown > 0) {
+    u.pendingWard = null
+    return
+  }
   if (dist(u.pos, u.pendingWard) <= WARD_CAST_RANGE) {
     placeWard(world, u, u.pendingWard)
     u.pendingWard = null
     u.moveTo = null
-  } else if (!u.moveTo) {
+  } else {
     u.moveTo = approachPoint(u.pos, u.pendingWard, WARD_CAST_RANGE * 0.92)
   }
 }
@@ -406,13 +435,15 @@ export function tickWorld(world: World) {
     aiTick(world, u)
 
     if (u.attackMoveTo) {
-      const near = enemiesOf(world, u)
-        .filter((o) => dist(u.pos, o.pos) <= u.stats.aaRange + UNIT_RADIUS)
-        .sort((a, b) => dist(u.pos, a.pos) - dist(u.pos, b.pos))[0]
-      if (near) {
-        u.targetId = near.id
+      const inRange = enemiesInAaRange(world, u)
+      if (inRange.length) {
+        const aim = u.attackMoveTo
+        const pick = inRange.reduce((best, o) =>
+          dist(o.pos, aim) < dist(best.pos, aim) ? o : best,
+        )
+        u.targetId = pick.id
         u.attackMoveTo = null
-        u.moveTo = approachPoint(u.pos, near.pos, attackStopDist(u))
+        u.moveTo = approachPoint(u.pos, pick.pos, attackStopDist(u))
       } else {
         const arrived = stepMove(world, u, u.attackMoveTo, UNIT_RADIUS)
         if (arrived) u.attackMoveTo = null

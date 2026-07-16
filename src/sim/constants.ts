@@ -4,8 +4,10 @@ export const UNIT_DIAMETER = UNIT_RADIUS * 2
 /** Inner circle for icon fill (inside ring stroke) */
 export const ICON_RADIUS = 24
 
-/** LoL-ish ward cast range */
-export const WARD_CAST_RANGE = 600
+/** Ward cast range (arena units). Must feel finite vs map size. */
+export const WARD_CAST_RANGE = 240
+/** Seconds between ward placements */
+export const WARD_COOLDOWN = 45
 
 export const COLORS = {
   ally: 0x5ec8ff,

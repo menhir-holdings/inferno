@@ -12,6 +12,7 @@ import {
   type Bindings,
 } from './input/bindings'
 import { tickWorld, DT } from './sim/world'
+import { WARD_COOLDOWN } from './sim/constants'
 import { scoreWorld } from './score/score'
 import type { FightResult, Scenario, ScoreBreakdown, World } from './sim/types'
 
@@ -160,9 +161,11 @@ function frame(now: number) {
   updateHud()
   updateAbilityBar()
   syncScoreboard()
+  syncDeathRematch()
 
   if (world.ended) {
     running = false
+    document.querySelector('.death-panel')?.remove()
     showOutcome(world.result)
     showDebrief(scoreWorld(world))
     return
@@ -216,7 +219,13 @@ function updateAbilityBar() {
       max: a.maxCooldown,
     })
   }
-  slots.push({ key: '4', label: '4', ready: true })
+  slots.push({
+    key: '4',
+    label: '4',
+    ready: p.wardCooldown <= 0,
+    cd: Math.max(0, p.wardCooldown),
+    max: WARD_COOLDOWN,
+  })
   bar.innerHTML = slots
     .map((s) => {
       const cls = ['slot', s.ready ? 'ready' : 'down', s.spent ? 'spent' : ''].filter(Boolean).join(' ')
@@ -280,6 +289,42 @@ function showOutcome(result: FightResult) {
   host.append(box)
 }
 
+function rematchActions(container: HTMLElement) {
+  const again = el('button', 'btn primary', 'Fight again')
+  again.addEventListener('click', () =>
+    scenario!.mode === 'laning'
+      ? startLaning(scenario!.seed, scenario!)
+      : startTeamfight(scenario!.seed, scenario!),
+  )
+  const regen = el('button', 'btn', 'New fight')
+  regen.addEventListener('click', () =>
+    scenario!.mode === 'laning'
+      ? startLaning((Math.random() * 1e9) | 0)
+      : startTeamfight((Math.random() * 1e9) | 0),
+  )
+  container.append(again, regen)
+}
+
+/** Mid-fight death: rematch without waiting for team wipe. */
+function syncDeathRematch() {
+  const host = document.getElementById('canvas-host')
+  if (!host || !world || !scenario) return
+  const player = world.units[world.playerId]
+  if (!player || player.alive || world.ended) {
+    host.querySelector('.death-panel')?.remove()
+    return
+  }
+  if (host.querySelector('.death-panel')) return
+  const box = el('div', 'death-panel')
+  box.innerHTML =
+    '<span class="death-label">YOU DIED</span><span class="death-sub">Spectating — or rematch</span><div class="actions"></div>'
+  rematchActions(box.querySelector('.actions') as HTMLElement)
+  const exit = el('button', 'btn', 'Exit')
+  exit.addEventListener('click', () => showHome())
+  ;(box.querySelector('.actions') as HTMLElement).append(exit)
+  host.append(box)
+}
+
 function showDebrief(score: ScoreBreakdown) {
   const shell = appRoot.querySelector('.shell')
   if (!shell || !scenario || !world) return
@@ -306,22 +351,11 @@ function showDebrief(score: ScoreBreakdown) {
     <ul class="notes">${score.notes.map((n) => `<li>${n}</li>`).join('')}</ul>
     <div class="actions"></div>
   `
-  const actions = box.querySelector('.actions')!
-  const again = el('button', 'btn primary', 'Fight again')
-  again.addEventListener('click', () =>
-    scenario!.mode === 'laning'
-      ? startLaning(scenario!.seed, scenario!)
-      : startTeamfight(scenario!.seed, scenario!),
-  )
-  const regen = el('button', 'btn', 'New fight')
-  regen.addEventListener('click', () =>
-    scenario!.mode === 'laning'
-      ? startLaning((Math.random() * 1e9) | 0)
-      : startTeamfight((Math.random() * 1e9) | 0),
-  )
+  const actions = box.querySelector('.actions') as HTMLElement
+  rematchActions(actions)
   const home = el('button', 'btn', 'Exit')
   home.addEventListener('click', () => showHome())
-  actions.append(again, regen, home)
+  actions.append(home)
   shell.append(box)
 }
 

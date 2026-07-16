@@ -97,13 +97,14 @@ function unitSpawnInCluster(
   const perpCos = -sin
   const perpSin = cos
 
-  const alongSpan = 36 + (1 - cohesion) * 240
-  const perpSpan = 28 + (1 - cohesion) * 200
-  const chaos = (1 - cohesion) * 280
+  // cohesion 1 → nearly stacked; cohesion 0 → arena-scale scatter
+  const alongSpan = 4 + (1 - cohesion) * 520
+  const perpSpan = 4 + (1 - cohesion) * 480
+  const chaos = (1 - cohesion) * 620
 
   const t = count > 1 ? (index / (count - 1) - 0.5) * 2 : 0
   const along = t * alongSpan + (rng.next() - 0.5) * chaos
-  const perp = (rng.next() - 0.5) * perpSpan + (rng.next() - 0.5) * chaos * 0.65
+  const perp = (rng.next() - 0.5) * perpSpan + (rng.next() - 0.5) * chaos * 0.85
 
   return {
     x: anchor.x + cos * along + perpCos * perp,
@@ -225,6 +226,7 @@ export function scenarioToWorld(scenario: Scenario): World {
       moveFactor: 1,
       speedBoostTtl: 0,
       pendingWard: null,
+      wardCooldown: 0,
       damageDealt: 0,
       damageTaken: 0,
       focusScore: 0,

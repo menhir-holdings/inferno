@@ -91,8 +91,9 @@ export interface Unit {
   moveFactor: number
   /** temporary self speed boost seconds remaining */
   speedBoostTtl: number
-  /** walk into range then drop ward */
+  /** walk into range then drop ward at this world point */
   pendingWard: Vec2 | null
+  wardCooldown: number
   damageDealt: number
   damageTaken: number
   focusScore: number
