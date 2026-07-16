@@ -1,4 +1,4 @@
-import { UNIT_DIAMETER } from './constants'
+import { UNIT_DIAMETER, UNIT_RADIUS } from './constants'
 import type { AbilitySlot, Unit, Vec2, World } from './types'
 
 export function attackStopDist(u: Unit): number {
@@ -57,13 +57,26 @@ export function effectiveResist(u: Unit): number {
   return Math.min(0.85, u.stats.resist + u.resistBuff)
 }
 
-export function dealDamage(attacker: Unit, target: Unit, raw: number, isFocus = false): number {
+export function dealDamage(
+  world: World,
+  attacker: Unit,
+  target: Unit,
+  raw: number,
+  isFocus = false,
+): number {
   const mult = 1 + attacker.dpsBuff
   const dmg = Math.max(1, raw * mult * (1 - effectiveResist(target)))
   target.hp -= dmg
   target.damageTaken += dmg
   target.hitFlashTtl = 0.12
   attacker.damageDealt += dmg
+  world.floaters.push({
+    x: target.pos.x + (Math.random() - 0.5) * 16,
+    y: target.pos.y - UNIT_RADIUS - 6,
+    text: String(Math.round(dmg)),
+    ttl: 0.75,
+    color: isFocus ? 0xc4f000 : 0xffffff,
+  })
   if (isFocus && target.archetype !== 'tank') {
     attacker.focusScore += dmg * (target.hp / target.stats.maxHp < 0.4 ? 1.4 : 1)
   }

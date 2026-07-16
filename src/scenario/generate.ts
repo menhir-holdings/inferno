@@ -201,5 +201,6 @@ export function scenarioToWorld(scenario: Scenario): World {
     ended: false,
     nextProjectileId: 1,
     nextWardId: 1,
+    floaters: [],
   }
 }

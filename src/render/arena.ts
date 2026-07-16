@@ -48,6 +48,10 @@ export class ArenaRenderer {
     this.bgLayer.stroke({ width: 1, color: COLORS.grid, alpha: 0.35 })
     this.bgLayer.rect(8, 8, w - 16, h - 16)
     this.bgLayer.stroke({ width: 2, color: 0x2a3020, alpha: 0.8 })
+    const mid = w / 2
+    this.bgLayer.moveTo(mid, 12)
+    this.bgLayer.lineTo(mid, h - 12)
+    this.bgLayer.stroke({ width: 1, color: 0xc4f000, alpha: 0.12 })
   }
 
   async ensureIcon(champId: string) {
@@ -113,7 +117,9 @@ export class ArenaRenderer {
     }
   }
 
-  drawUnit(u: Unit, view: UnitView, playerTargetId: number | null) {
+  drawUnit(u: Unit, view: UnitView, world: World) {
+    const player = world.units[world.playerId]
+    const playerTargetId = player?.targetId ?? null
     view.root.visible = u.alive || u.hp > 0
     view.root.alpha = u.alive ? 1 : 0.2
     view.root.x = u.pos.x
@@ -138,6 +144,16 @@ export class ArenaRenderer {
     if (playerTargetId === u.id && u.alive) {
       view.targetRing.circle(0, 0, UNIT_RADIUS + 5)
       view.targetRing.stroke({ width: 2, color: COLORS.player, alpha: 0.85 })
+    } else if (
+      player?.alive &&
+      u.alive &&
+      u.team !== player.team &&
+      u.targetId === world.playerId
+    ) {
+      view.targetRing.moveTo(-8, -UNIT_RADIUS - 14)
+      view.targetRing.lineTo(0, -UNIT_RADIUS - 6)
+      view.targetRing.lineTo(8, -UNIT_RADIUS - 14)
+      view.targetRing.stroke({ width: 2, color: COLORS.foe, alpha: 0.9 })
     }
 
     const ratio = Math.max(0, u.hp / u.stats.maxHp)
@@ -172,14 +188,12 @@ export class ArenaRenderer {
 
   render(world: World, input: InputState) {
     const player = world.units[world.playerId]
-    const playerTargetId = player?.targetId ?? null
-
     const sorted = [...world.units].sort((a, b) => a.pos.y - b.pos.y)
     for (const u of sorted) {
       const v = this.views.get(u.id)
       if (v) {
         this.worldLayer.addChild(v.root)
-        this.drawUnit(u, v, playerTargetId)
+        this.drawUnit(u, v, world)
       }
     }
 
@@ -207,6 +221,23 @@ export class ArenaRenderer {
       g.fill({ color: w.team === 'blue' ? COLORS.ally : COLORS.foe, alpha: 0.55 })
       g.circle(w.pos.x, w.pos.y, 14)
       g.stroke({ width: 1, color: 0xc4f000, alpha: 0.25 })
+      this.fxLayer.addChild(g)
+    }
+
+    for (const f of world.floaters) {
+      const g = new Text({
+        text: f.text,
+        style: new TextStyle({
+          fontFamily: 'Share Tech Mono, monospace',
+          fontSize: 11,
+          fill: f.color,
+          fontWeight: '600',
+        }),
+      })
+      g.anchor.set(0.5, 1)
+      g.x = f.x
+      g.y = f.y - (0.75 - f.ttl) * 28
+      g.alpha = Math.min(1, f.ttl * 2)
       this.fxLayer.addChild(g)
     }
 

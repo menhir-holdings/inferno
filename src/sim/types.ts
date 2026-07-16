@@ -98,6 +98,14 @@ export interface Unit {
   hitFlashTtl: number
 }
 
+export interface DamageFloater {
+  x: number
+  y: number
+  text: string
+  ttl: number
+  color: number
+}
+
 export interface Ward {
   id: number
   pos: Vec2
@@ -132,6 +140,7 @@ export interface World {
   ended: boolean
   nextProjectileId: number
   nextWardId: number
+  floaters: DamageFloater[]
 }
 
 export interface Scenario {

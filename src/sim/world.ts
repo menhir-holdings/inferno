@@ -82,7 +82,7 @@ function tryAutoAttack(world: World, u: Unit) {
   u.moveTo = null
   const dmg = aaDamage(u)
   if (u.stats.melee || range < 200) {
-    dealDamage(u, target, dmg, target.archetype !== 'tank')
+    dealDamage(world, u, target, dmg, target.archetype !== 'tank')
   } else {
     const n = norm(u.pos, target.pos)
     world.projectiles.push({
@@ -112,7 +112,7 @@ function tickProjectiles(world: World) {
       const t = world.units[p.toId]
       if (t && t.alive && dist(p.pos, t.pos) < UNIT_RADIUS) {
         const atk = world.units[p.fromId]
-        if (atk) dealDamage(atk, t, p.damage, t.archetype !== 'tank')
+        if (atk) dealDamage(world, atk, t, p.damage, t.archetype !== 'tank')
         hit = true
       }
     } else {
@@ -120,7 +120,7 @@ function tickProjectiles(world: World) {
         if (!t.alive || t.team === p.team) continue
         if (dist(p.pos, t.pos) < p.radius + UNIT_RADIUS * 0.7) {
           const atk = world.units[p.fromId]
-          if (atk) dealDamage(atk, t, p.damage, true)
+          if (atk) dealDamage(world, atk, t, p.damage, true)
           hit = true
           break
         }
@@ -189,10 +189,10 @@ export function castAbility(
   if (!target) return false
 
   if (slot === 'r') {
-    dealDamage(u, target, dmg, true)
+    dealDamage(world, u, target, dmg, true)
     for (const o of enemiesOf(world, u)) {
       if (o.id !== target.id && dist(target.pos, o.pos) < 150) {
-        dealDamage(u, o, dmg * 0.35, false)
+        dealDamage(world, u, o, dmg * 0.35, false)
       }
     }
     if (u.archetype === 'assassin') {
@@ -227,7 +227,7 @@ export function useActive(world: World, u: Unit, slot: 1 | 2 | 3) {
   if (!act || !act.ready || !u.alive) return false
   if (act.kind === 'burst') {
     const t = priorityTarget(world, u) ?? nearestEnemy(world, u)
-    if (t) dealDamage(u, t, u.stats.abilityPower * 1.6, true)
+    if (t) dealDamage(world, u, t, u.stats.abilityPower * 1.6, true)
   } else if (act.kind === 'shield') {
     u.hp = Math.min(u.stats.maxHp, u.hp + u.stats.maxHp * 0.22)
   } else if (act.kind === 'speed') {
@@ -356,6 +356,9 @@ export function tickWorld(world: World) {
   }
 
   resolveUnitCollisions(world)
+
+  for (const f of world.floaters) f.ttl -= DT
+  world.floaters = world.floaters.filter((f) => f.ttl > 0)
 
   for (const w of world.wards) w.ttl -= DT
   world.wards = world.wards.filter((w) => w.ttl > 0)
