@@ -62,16 +62,53 @@ export function makeItems(rng: ReturnType<typeof createRng>, activeKinds: Active
   return items.slice(0, 6)
 }
 
-function startPos(
-  team: 'blue' | 'red',
-  index: number,
+/** Per-team spawn: random anchor, facing axis, cohesion 0 (chaotic) → 1 (tight). */
+interface TeamSpawnGeom {
+  anchor: { x: number; y: number }
+  angle: number
+  cohesion: number
+}
+
+function teamSpawnGeom(
+  rng: ReturnType<typeof createRng>,
   arenaW: number,
   arenaH: number,
-) {
-  const side = team === 'blue' ? 0.2 : 0.8
-  const col = side * arenaW
-  const row = arenaH * (0.18 + ((index + 0.5) / 5) * 0.64)
-  return { x: col, y: row }
+): TeamSpawnGeom {
+  const margin = 90
+  return {
+    anchor: {
+      x: margin + rng.next() * (arenaW - margin * 2),
+      y: margin + rng.next() * (arenaH - margin * 2),
+    },
+    angle: rng.next() * Math.PI * 2,
+    cohesion: rng.next(),
+  }
+}
+
+function unitSpawnInCluster(
+  rng: ReturnType<typeof createRng>,
+  geom: TeamSpawnGeom,
+  index: number,
+  count: number,
+): { x: number; y: number } {
+  const { anchor, angle, cohesion } = geom
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  const perpCos = -sin
+  const perpSin = cos
+
+  const alongSpan = 36 + (1 - cohesion) * 240
+  const perpSpan = 28 + (1 - cohesion) * 200
+  const chaos = (1 - cohesion) * 280
+
+  const t = count > 1 ? (index / (count - 1) - 0.5) * 2 : 0
+  const along = t * alongSpan + (rng.next() - 0.5) * chaos
+  const perp = (rng.next() - 0.5) * perpSpan + (rng.next() - 0.5) * chaos * 0.65
+
+  return {
+    x: anchor.x + cos * along + perpCos * perp,
+    y: anchor.y + sin * along + perpSin * perp,
+  }
 }
 
 export function generateScenario(seed: number, durationSec = 45): Scenario {
@@ -91,6 +128,10 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
   const arenaW = 1100
   const arenaH = 700
   const rawPositions: { pos: { x: number; y: number }; unit: Omit<ScenarioUnit, 'startPos'> }[] = []
+  const teamGeom: Record<'blue' | 'red', TeamSpawnGeom> = {
+    blue: teamSpawnGeom(rng, arenaW, arenaH),
+    red: teamSpawnGeom(rng, arenaW, arenaH),
+  }
 
   for (const team of ['blue', 'red'] as const) {
     const shuffledRoles = rng.shuffle([...roles])
@@ -109,7 +150,7 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
         activeKinds.push(rng.pick(ACTIVE_KINDS))
       }
       rawPositions.push({
-        pos: startPos(team, i, arenaW, arenaH),
+        pos: unitSpawnInCluster(rng, teamGeom[team], i, shuffledRoles.length),
         unit: {
           champId: champ.id,
           champName: champ.name,
