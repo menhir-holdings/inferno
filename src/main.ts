@@ -13,7 +13,9 @@ import {
 } from './input/bindings'
 import { tickWorld, DT } from './sim/world'
 import { WARD_COOLDOWN } from './sim/constants'
+import { WAVE_TELEGRAPH } from './sim/laning'
 import { scoreWorld } from './score/score'
+import { scoreLaningWorld } from './score/laning'
 import type { FightResult, Scenario, ScoreBreakdown, World } from './sim/types'
 
 const appRoot = document.querySelector<HTMLDivElement>('#app')!
@@ -167,7 +169,7 @@ function frame(now: number) {
     running = false
     document.querySelector('.death-panel')?.remove()
     showOutcome(world.result)
-    showDebrief(scoreWorld(world))
+    showDebrief(world.mode === 'laning' ? scoreLaningWorld(world) : scoreWorld(world))
     return
   }
   raf = requestAnimationFrame(frame)
@@ -188,11 +190,21 @@ function updateHud() {
     world.mode === 'laning'
       ? `<div class="stat">CS <strong>${world.playerCs}</strong></div>`
       : ''
+  const waveLine =
+    world.mode === 'laning' && world.waveTimer <= WAVE_TELEGRAPH
+      ? `<div class="stat stat-wave">Wave <strong>${world.waveTimer.toFixed(0)}s</strong></div>`
+      : ''
+  const lastHitLine =
+    world.mode === 'laning' && world.lastHitMinionId != null
+      ? `<div class="stat stat-lasthit">Last hit <strong>!</strong></div>`
+      : ''
   bar.innerHTML = `
     <div class="stat">Time <strong>${remain.toFixed(1)}s</strong></div>
     <div class="stat">${p.champName} <strong>${p.archetype}</strong></div>
     <div class="stat">HP <strong>${Math.max(0, Math.round(p.hp))}</strong>/${p.stats.maxHp}</div>
     ${csLine}
+    ${waveLine}
+    ${lastHitLine}
     ${targetLine}
     ${modeBadge}
     <div class="stat">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'off'}</strong></div>
@@ -341,12 +353,23 @@ function showDebrief(score: ScoreBreakdown) {
   box.innerHTML = `
     <h2>${headline} — ${score.total}</h2>
     <div class="scores">
+      ${
+        world.mode === 'laning'
+          ? `
+      <div><strong>${score.cs ?? 0}</strong><span>CS</span></div>
+      <div><strong>${score.lastHitMissed ?? 0}</strong><span>Missed</span></div>
+      <div><strong>${score.focus}</strong><span>CS pace</span></div>
+      <div><strong>${score.spacing}</strong><span>Last-hit</span></div>
+      <div><strong>${score.execution}</strong><span>Trades</span></div>
+      <div><strong>${score.survival}</strong><span>Survival</span></div>`
+          : `
       <div><strong>${score.focus}</strong><span>Focus</span></div>
       <div><strong>${score.spacing}</strong><span>Spacing</span></div>
       <div><strong>${score.execution}</strong><span>Execution</span></div>
       <div><strong>${score.survival}</strong><span>Survival</span></div>
       <div><strong>${score.damageDealt}</strong><span>Dmg out</span></div>
-      <div><strong>${score.damageTaken}</strong><span>Dmg in</span></div>
+      <div><strong>${score.damageTaken}</strong><span>Dmg in</span></div>`
+      }
     </div>
     <ul class="notes">${score.notes.map((n) => `<li>${n}</li>`).join('')}</ul>
     <div class="actions"></div>

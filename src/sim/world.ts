@@ -354,6 +354,55 @@ function tickPendingWard(world: World, u: Unit) {
   }
 }
 
+function laningOpponentAi(world: World, foe: Unit) {
+  const player = world.units[world.playerId]
+  if (!player?.alive || !foe.alive) return
+
+  const d = dist(foe.pos, player.pos)
+  const stop = attackStopDist(foe)
+  const playerCsing =
+    player.targetId != null && world.minions.some((m) => m.id === player.targetId && m.alive)
+  const playerLow = player.hp / player.stats.maxHp < 0.42
+  const foeAhead = foe.hp / foe.stats.maxHp > player.hp / player.stats.maxHp + 0.12
+
+  if (playerCsing && d < foe.stats.aaRange * 1.15) {
+    foe.targetId = player.id
+    foe.moveTo = approachPoint(foe.pos, player.pos, stop)
+    if (foe.abilities.q.ready) castAbility(world, foe, 'q', player.pos)
+    return
+  }
+
+  if (playerLow && d < foe.stats.aaRange * 1.25 && foeAhead) {
+    foe.targetId = player.id
+    foe.moveTo = approachPoint(foe.pos, player.pos, stop)
+    if (foe.abilities.e.ready) castAbility(world, foe, 'e', player.pos)
+    if (foe.abilities.r.ready && !foe.abilities.r.spent) castAbility(world, foe, 'r', player.pos)
+    return
+  }
+
+  if (d < foe.stats.aaRange * 0.95 && !playerCsing) {
+    const n = norm(foe.pos, player.pos)
+    foe.moveTo = {
+      x: foe.pos.x - n.x * 70,
+      y: foe.pos.y - n.y * 70,
+    }
+    foe.targetId = null
+    return
+  }
+
+  const farm = world.minions.find(
+    (m) => m.alive && m.team !== foe.team && dist(foe.pos, m.pos) < foe.stats.aaRange,
+  )
+  if (farm) {
+    foe.targetId = null
+    foe.moveTo = approachPoint(foe.pos, farm.pos, attackStopDist(foe))
+  } else {
+    const anchorY = world.arena.h * 0.32
+    foe.targetId = player.id
+    foe.moveTo = { x: world.arena.w / 2 + 60, y: anchorY }
+  }
+}
+
 function aiTick(world: World, u: Unit) {
   if (u.isPlayer || !u.alive) return
   const foe = nearestEnemy(world, u)
@@ -439,7 +488,11 @@ export function tickWorld(world: World) {
     if (!u.alive) continue
     tickCooldowns(u)
     if (u.isPlayer) tickPendingWard(world, u)
-    aiTick(world, u)
+    if (world.mode === 'laning' && u.team === 'red') {
+      laningOpponentAi(world, u)
+    } else if (!u.isPlayer) {
+      aiTick(world, u)
+    }
 
     if (u.attackMoveTo) {
       const inRange = enemiesInAaRange(world, u)
