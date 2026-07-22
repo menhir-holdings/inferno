@@ -40,3 +40,8 @@ npm run dev
 - Linear: [Inferno](https://linear.app/menhir-holdings/project/inferno-3a73f03f1d11)
 
 Menhir Holdings · Workshop
+
+
+## License
+
+All Rights Reserved © Menhir Holdings
