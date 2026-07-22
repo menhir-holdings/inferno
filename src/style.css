@@ -266,6 +266,20 @@ body {
   letter-spacing: 0.1em;
 }
 
+.hud-bar .stat-wave strong {
+  color: #e8b86d;
+}
+
+.hud-bar .stat-lasthit strong {
+  color: var(--phos);
+  animation: lasthit-pulse 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes lasthit-pulse {
+  from { opacity: 0.55; }
+  to { opacity: 1; }
+}
+
 .hud-bar .hint {
   color: var(--mute);
   margin-left: auto;

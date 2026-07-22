@@ -180,6 +180,10 @@ export interface World {
   /** Laning: player CS */
   playerCs: number
   waveTimer: number
+  /** Minion id in last-hit window (HUD telegraph) */
+  lastHitMinionId: number | null
+  /** Minions lost while in last-hit range */
+  lastHitMissed: number
 }
 
 export interface Scenario {
@@ -230,4 +234,7 @@ export interface ScoreBreakdown {
   damageDealt: number
   damageTaken: number
   notes: string[]
+  /** Laning-only metrics */
+  cs?: number
+  lastHitMissed?: number
 }

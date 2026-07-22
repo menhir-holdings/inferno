@@ -256,5 +256,7 @@ export function scenarioToWorld(scenario: Scenario): World {
     floaters: [],
     playerCs: 0,
     waveTimer: 4,
+    lastHitMinionId: null,
+    lastHitMissed: 0,
   }
 }

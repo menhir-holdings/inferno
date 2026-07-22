@@ -3,7 +3,8 @@ import { dist, norm } from './combat'
 import type { Minion, Team, World } from './types'
 
 const DT = 1 / 60
-const WAVE_INTERVAL = 28
+export const WAVE_INTERVAL = 28
+export const WAVE_TELEGRAPH = 6
 
 function spawnWave(world: World) {
   const midX = world.arena.w / 2
@@ -78,6 +79,28 @@ function stepMinion(world: World, m: Minion) {
   }
 }
 
+function updateLastHitWindow(world: World) {
+  const player = world.units[world.playerId]
+  world.lastHitMinionId = null
+  if (!player?.alive) return
+
+  const aaKill = player.stats.aaDamage * 1.15
+  const range = player.stats.aaRange + UNIT_RADIUS
+  let best: Minion | null = null
+  let bestHp = Infinity
+
+  for (const m of world.minions) {
+    if (!m.alive || m.team === player.team) continue
+    const d = dist(player.pos, m.pos)
+    if (d > range) continue
+    if (m.hp <= aaKill && m.hp < bestHp) {
+      best = m
+      bestHp = m.hp
+    }
+  }
+  world.lastHitMinionId = best?.id ?? null
+}
+
 export function tickLaning(world: World) {
   world.waveTimer -= DT
   if (world.waveTimer <= 0) {
@@ -85,10 +108,23 @@ export function tickLaning(world: World) {
     world.waveTimer = WAVE_INTERVAL
   }
 
+  updateLastHitWindow(world)
+  const trackedLastHit = world.lastHitMinionId
+  const player = world.units[world.playerId]
+
   for (const m of world.minions) stepMinion(world, m)
+
+  for (const m of world.minions) {
+    if (m.alive && m.hp <= 0) {
+      if (m.id === trackedLastHit && player?.targetId !== m.id) {
+        world.lastHitMissed += 1
+      }
+      m.alive = false
+    }
+  }
+
   world.minions = world.minions.filter((m) => m.alive)
 
-  const player = world.units[world.playerId]
   if (player?.alive && player.targetId != null) {
     const minion = world.minions.find((m) => m.id === player.targetId && m.alive)
     if (minion && dist(player.pos, minion.pos) <= player.stats.aaRange + UNIT_RADIUS) {
@@ -97,6 +133,13 @@ export function tickLaning(world: World) {
         minion.hp = 0
         minion.alive = false
         world.playerCs += 1
+        world.floaters.push({
+          x: minion.pos.x,
+          y: minion.pos.y - 20,
+          text: '+CS',
+          ttl: 0.9,
+          color: 0xc4f000,
+        })
         player.targetId = null
       }
     }
