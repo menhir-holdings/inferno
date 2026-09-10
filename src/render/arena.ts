@@ -53,14 +53,14 @@ export class ArenaRenderer {
     }
     this.bgLayer.stroke({ width: 1, color: COLORS.grid, alpha: 0.35 })
     this.bgLayer.rect(8, 8, w - 16, h - 16)
-    this.bgLayer.stroke({ width: 2, color: 0x2a3020, alpha: 0.8 })
+    this.bgLayer.stroke({ width: 2, color: COLORS.grid, alpha: 0.85 })
     if (mode === 'laning') {
       drawLaneOverlay(w, h, this.bgLayer)
     } else {
       const mid = w / 2
       this.bgLayer.moveTo(mid, 12)
       this.bgLayer.lineTo(mid, h - 12)
-      this.bgLayer.stroke({ width: 1, color: 0xc4f000, alpha: 0.12 })
+      this.bgLayer.stroke({ width: 1, color: 0xc45c32, alpha: 0.22 })
     }
   }
 
@@ -99,9 +99,9 @@ export class ArenaRenderer {
       const name = new Text({
         text: u.champName,
         style: new TextStyle({
-          fontFamily: 'Chakra Petch, Share Tech Mono, monospace',
-          fontSize: 10,
-          fill: 0xd6d2c4,
+          fontFamily: 'Barlow Condensed, Barlow, sans-serif',
+          fontSize: 11,
+          fill: 0xe8ddd3,
           fontWeight: '600',
         }),
       })
@@ -196,15 +196,15 @@ export class ArenaRenderer {
       const isAbility = p.kind === 'ability' || isUlt
       const isMeleeAa = p.kind === 'aa' && p.radius >= 8
       const r = isUlt ? 14 : isAbility ? 8 : isMeleeAa ? 7 : 5
-      const color = isUlt ? 0xc4f000 : isAbility ? 0xf472b6 : isMeleeAa ? 0xffe08a : 0xfde68a
+      const color = isUlt ? COLORS.player : isAbility ? COLORS.buff : isMeleeAa ? 0xffe08a : 0xe8b86d
       g.circle(p.pos.x, p.pos.y, r)
       g.fill({ color, alpha: 0.92 })
       if (isUlt) {
         g.circle(p.pos.x, p.pos.y, r + 6)
-        g.stroke({ width: 2, color: 0xfff59e, alpha: 0.45 })
+        g.stroke({ width: 2, color: 0xff8c42, alpha: 0.45 })
       } else if (isAbility) {
         g.circle(p.pos.x - p.vel.x * 0.03, p.pos.y - p.vel.y * 0.03, r * 0.6)
-        g.fill({ color: 0xf472b6, alpha: 0.35 })
+        g.fill({ color: COLORS.buff, alpha: 0.35 })
       } else if (isMeleeAa) {
         g.circle(p.pos.x - p.vel.x * 0.012, p.pos.y - p.vel.y * 0.012, r * 0.55)
         g.fill({ color: 0xffc857, alpha: 0.4 })
@@ -225,7 +225,7 @@ export class ArenaRenderer {
       g.circle(w.pos.x, w.pos.y, 7)
       g.fill({ color: w.team === 'blue' ? COLORS.ally : COLORS.foe, alpha: 0.55 })
       g.circle(w.pos.x, w.pos.y, 14)
-      g.stroke({ width: 1, color: 0xc4f000, alpha: 0.25 })
+      g.stroke({ width: 1, color: COLORS.player, alpha: 0.28 })
       this.fxLayer.addChild(g)
     }
 
@@ -244,8 +244,8 @@ export class ArenaRenderer {
       const g = new Text({
         text: f.text,
         style: new TextStyle({
-          fontFamily: 'Share Tech Mono, monospace',
-          fontSize: 11,
+          fontFamily: 'Barlow Condensed, Barlow, sans-serif',
+          fontSize: 12,
           fill: f.color,
           fontWeight: '600',
         }),
@@ -269,6 +269,28 @@ export class ArenaRenderer {
   destroy() {
     this.app.destroy(true)
   }
+}
+
+export function fitCanvasToHost(host: HTMLElement, canvas: HTMLCanvasElement, worldW: number, worldH: number) {
+  const rw = host.clientWidth
+  const rh = host.clientHeight
+  if (rw < 1 || rh < 1) return
+  const scale = Math.min(rw / worldW, rh / worldH)
+  canvas.style.width = `${Math.floor(worldW * scale)}px`
+  canvas.style.height = `${Math.floor(worldH * scale)}px`
+}
+
+export function attachCanvasFit(
+  host: HTMLElement,
+  canvas: HTMLCanvasElement,
+  worldW: number,
+  worldH: number,
+) {
+  const fit = () => fitCanvasToHost(host, canvas, worldW, worldH)
+  fit()
+  const ro = new ResizeObserver(fit)
+  ro.observe(host)
+  return () => ro.disconnect()
 }
 
 export async function createApp(host: HTMLElement, w: number, h: number): Promise<Application> {

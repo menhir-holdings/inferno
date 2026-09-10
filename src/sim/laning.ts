@@ -138,7 +138,7 @@ export function tickLaning(world: World) {
           y: minion.pos.y - 20,
           text: '+CS',
           ttl: 0.9,
-          color: 0xc4f000,
+          color: 0xff5a1a,
         })
         player.targetId = null
       }
@@ -166,8 +166,8 @@ export function drawLaneOverlay(w: number, h: number, g: {
 }) {
   const mid = w / 2
   g.rect(mid - 70, 12, 140, h - 24)
-  g.fill({ color: 0x1a1e14, alpha: 0.55 })
+  g.fill({ color: 0x1c1814, alpha: 0.55 })
   g.moveTo(mid, 12)
   g.lineTo(mid, h - 12)
-  g.stroke({ width: 1, color: 0xc4f000, alpha: 0.18 })
+  g.stroke({ width: 1, color: 0xc45c32, alpha: 0.22 })
 }
