@@ -35,7 +35,8 @@ npm run dev
 
 ## Live
 
-- App: https://inferno.menhir-holdings.com
+- App: https://inferno-ruby.vercel.app
+- Custom domain: https://inferno.menhir-holdings.com
 - Repo: https://github.com/menhir-holdings/inferno
 - Linear: [Inferno](https://linear.app/menhir-holdings/project/inferno-3a73f03f1d11)
 

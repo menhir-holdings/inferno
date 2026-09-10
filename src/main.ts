@@ -43,20 +43,30 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
+function modeCard(title: string, copy: string, kind: 'go' | 'open' | 'shelved') {
+  const btn = el('button', `mode-card${kind === 'go' ? ' mode-card-go' : kind === 'shelved' ? ' mode-card-shelved' : ''}`) as HTMLButtonElement
+  btn.type = 'button'
+  btn.innerHTML = `<span class="mode-name">${title}</span><span class="mode-copy">${copy}</span>`
+  if (kind === 'shelved') btn.disabled = true
+  return btn
+}
+
 function showHome() {
   stopLoop()
   cleanupFight()
   appRoot.innerHTML = ''
+
+  const world = el('div', 'home-world')
+  world.setAttribute('aria-hidden', 'true')
+
   const shell = el('div', 'shell home')
+  const hud = el('div', 'home-hud')
 
-  const top = el('div', 'home-top')
-  top.innerHTML =
-    '<div class="mark"><b>MENHIR</b> / WORKSHOP / RANGE</div><div class="mark">OODA DRILL</div>'
-  shell.append(top)
-
-  const hero = el('div', 'home-hero')
-  hero.append(el('h1', 'brand', 'INFERNO'))
-  hero.append(
+  const kicker = el('div', 'pause-kicker')
+  kicker.innerHTML = '<i></i> Range <i></i>'
+  hud.append(kicker)
+  hud.append(el('h1', 'brand', 'INFERNO'))
+  hud.append(
     el(
       'p',
       'lede',
@@ -67,25 +77,27 @@ function showHome() {
   for (const s of ['Observe', 'Orient', 'Decide', 'Act']) {
     ooda.append(el('span', '', s))
   }
-  hero.append(ooda)
+  hud.append(ooda)
 
-  const cta = el('div', 'cta-row')
-  const fire = el('button', 'btn-fire', 'Enter Teamfight') as HTMLButtonElement
+  const sheet = el('div', 'mode-sheet')
+  sheet.append(el('p', 'pick-label', 'Pick your drill'))
+  const stack = el('div', 'mode-stack')
+  const fire = modeCard('Teamfight', 'Fight reads. Five champs. Motor load.', 'go')
   fire.addEventListener('click', () => startTeamfight(lastScenarioSeed))
-  const lane = el('button', 'btn', 'Enter Laning') as HTMLButtonElement
+  const lane = modeCard('Laning', 'Wave, last-hit, and trades on a clock.', 'open')
   lane.addEventListener('click', () => startLaning((lastScenarioSeed ^ 0x1a4e) >>> 0))
-  const soon = el('ul', 'soon-list')
-  soon.innerHTML = '<li>Jungle shelved — teamfight + laning active</li>'
-  cta.append(fire, lane, soon)
-  hero.append(cta)
-  shell.append(hero)
+  const jungle = modeCard('Jungle', 'Pathing under fog — shelved.', 'shelved')
+  stack.append(fire, lane, jungle)
+  sheet.append(stack)
+  hud.append(sheet)
 
   const foot = el('div', 'home-foot')
   const settingsBtn = el('button', 'settings-link', 'Hotkeys')
   settingsBtn.addEventListener('click', () => openBindingsModal())
   foot.append(settingsBtn, document.createTextNode('Menhir Holdings'))
-  shell.append(foot)
-  appRoot.append(shell)
+  hud.append(foot)
+  shell.append(hud)
+  appRoot.append(world, shell)
 }
 
 async function startTeamfight(seed: number, existing?: Scenario) {
