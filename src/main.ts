@@ -17,6 +17,8 @@ import { WARD_COOLDOWN } from './sim/constants'
 import { WAVE_TELEGRAPH } from './sim/laning'
 import { scoreWorld } from './score/score'
 import { scoreLaningWorld } from './score/laning'
+import { drillObjective } from './drill/brief'
+import { flushCues } from './audio/cues'
 import type { FightResult, Scenario, ScoreBreakdown, Unit, World } from './sim/types'
 
 const appRoot = document.querySelector<HTMLDivElement>('#app')!
@@ -84,9 +86,9 @@ function showHome() {
   const sheet = el('div', 'mode-sheet')
   sheet.append(el('p', 'pick-label', 'Pick your drill'))
   const stack = el('div', 'mode-stack')
-  const fire = modeCard('Teamfight', 'Fight reads. Five champs. Motor load.', 'go')
+  const fire = modeCard('Teamfight', 'Five champs. Telegraphs. Dodge, focus, execute.', 'go')
   fire.addEventListener('click', () => startTeamfight(lastScenarioSeed))
-  const lane = modeCard('Laning', 'Wave, last-hit, and trades on a clock.', 'open')
+  const lane = modeCard('Laning', 'Wave clock, last-hit window, punish their CS.', 'open')
   lane.addEventListener('click', () => startLaning((lastScenarioSeed ^ 0x1a4e) >>> 0))
   const jungle = modeCard('Jungle', 'Pathing under fog — shelved.', 'shelved')
   stack.append(fire, lane, jungle)
@@ -143,12 +145,23 @@ async function startFight(sc: Scenario) {
       <div class="portrait-card" id="hud-target"></div>
     </div>
     <p class="play-hint" id="hud-hint"></p>
+    <div class="drill-brief" id="drill-brief" hidden>
+      <div class="pause-kicker play-kicker"><i></i> Drill <i></i></div>
+      <h2 id="brief-title"></h2>
+      <p id="brief-line"></p>
+      <div class="brief-count" id="brief-count">3</div>
+    </div>
   `
   const hint = overlay.querySelector('#hud-hint') as HTMLElement
   hint.innerHTML =
     'RMB · A · X+click · QWER · 1234 · S · Tab · Esc · <button type="button" class="settings-link" id="hud-hotkeys">Hotkeys</button>'
   overlay.querySelector('#hud-exit')!.addEventListener('click', () => showHome())
   overlay.querySelector('#hud-hotkeys')!.addEventListener('click', () => openBindingsModal())
+  const brief = overlay.querySelector('#drill-brief') as HTMLElement
+  const obj = drillObjective(world.units[world.playerId]!, sc.mode)
+  ;(overlay.querySelector('#brief-title') as HTMLElement).textContent = obj.title
+  ;(overlay.querySelector('#brief-line') as HTMLElement).textContent = obj.line
+  brief.hidden = false
   shell.append(host, overlay)
   appRoot.append(shell)
 
@@ -189,11 +202,13 @@ function frame(now: number) {
     acc -= DT
   }
   renderer.render(world, inputState)
+  flushCues(world.cues)
   if (!world.units[world.playerId]?.alive) {
     cancelTargeting(inputState)
   }
   updateHud()
   updateAbilityBar()
+  syncBrief()
   syncScoreboard()
   syncDeathRematch()
 
@@ -244,6 +259,19 @@ function syncRail(node: HTMLElement | null, units: Unit[]) {
   }
 }
 
+function syncBrief() {
+  const brief = document.getElementById('drill-brief')
+  const count = document.getElementById('brief-count')
+  if (!brief || !world) return
+  if (world.warmup <= 0 || world.ended) {
+    brief.hidden = true
+    return
+  }
+  brief.hidden = false
+  const n = Math.ceil(world.warmup)
+  if (count) count.textContent = n > 0 ? String(n) : 'GO'
+}
+
 function portraitCardHtml(u: Unit | null, empty: string) {
   if (!u) return `<div class="portrait-card-empty">${empty}</div>`
   const hp = Math.max(0, Math.round(u.hp))
@@ -284,7 +312,9 @@ function updateHud() {
   const p = world.units[world.playerId]!
   const remain = Math.max(0, world.duration - world.time)
   const clock = document.getElementById('hud-clock')
-  if (clock) clock.textContent = `${remain.toFixed(1)}s`
+  if (clock) {
+    clock.textContent = world.warmup > 0 ? 'HOLD' : `${remain.toFixed(1)}s`
+  }
   const target = p.targetId != null ? world.units[p.targetId] : null
   const mode = targetingLabel(inputState.targeting)
   const stats = document.getElementById('hud-stats')
@@ -298,6 +328,7 @@ function updateHud() {
     if (world.mode === 'laning' && world.lastHitMinionId != null) {
       chips.push(`<span class="stat-pill stat-lasthit">Last hit <strong>!</strong></span>`)
     }
+    if (world.dodges > 0) chips.push(`<span class="stat-pill">Dodge <strong>${world.dodges}</strong></span>`)
     chips.push(`<span class="stat-pill">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'off'}</strong></span>`)
     stats.innerHTML = chips.join('')
   }

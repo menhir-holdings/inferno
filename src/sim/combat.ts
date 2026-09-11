@@ -70,6 +70,8 @@ export function dealDamage(
   target.damageTaken += dmg
   target.hitFlashTtl = 0.12
   attacker.damageDealt += dmg
+  world.cues.push('hit')
+  world.shake = Math.max(world.shake, isFocus ? 5 : 2.4)
   world.floaters.push({
     x: target.pos.x + (Math.random() - 0.5) * 16,
     y: target.pos.y - UNIT_RADIUS - 6,
@@ -85,6 +87,8 @@ export function dealDamage(
     target.alive = false
     target.deaths += 1
     attacker.kills += 1
+    world.cues.push(target.isPlayer ? 'death' : 'kill')
+    world.shake = Math.max(world.shake, target.isPlayer ? 10 : 7)
     if (target.isPlayer) {
       target.targetId = null
       target.moveTo = null
@@ -108,4 +112,17 @@ export function abilityDamage(caster: Unit, slot: AbilitySlot): number {
 
 export function aaDamage(attacker: Unit): number {
   return attacker.stats.aaDamage * (1 + attacker.dpsBuff)
+}
+
+export function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  const len2 = dx * dx + dy * dy || 1
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t))
+}
+
+export function inTelegraphDanger(from: Vec2, to: Vec2, kind: 'line' | 'circle', radius: number, pos: Vec2): boolean {
+  if (kind === 'circle') return dist(pos, to) <= radius
+  return distToSegment(pos, from, to) <= radius
 }

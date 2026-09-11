@@ -41,26 +41,32 @@ export class ArenaRenderer {
   drawArena(w: number, h: number, mode: World['mode'] = 'teamfight') {
     this.bgLayer.clear()
     this.bgLayer.rect(0, 0, w, h)
-    this.bgLayer.fill({ color: COLORS.arena })
-    const step = 44
-    for (let x = 0; x <= w; x += step) {
-      this.bgLayer.moveTo(x, 0)
-      this.bgLayer.lineTo(x, h)
+    this.bgLayer.fill({ color: 0x161310 })
+    this.bgLayer.ellipse(w * 0.5, h * 0.52, w * 0.46, h * 0.38)
+    this.bgLayer.fill({ color: 0x1c1814, alpha: 0.9 })
+    this.bgLayer.ellipse(w * 0.5, h * 0.52, w * 0.28, h * 0.22)
+    this.bgLayer.stroke({ width: 2, color: 0xc45c32, alpha: 0.22 })
+    this.bgLayer.ellipse(w * 0.5, h * 0.52, 48, 36)
+    this.bgLayer.stroke({ width: 1.5, color: 0x8f8176, alpha: 0.28 })
+    for (let i = 0; i < 7; i++) {
+      const y = 70 + i * ((h - 140) / 6)
+      this.bgLayer.moveTo(28, y)
+      this.bgLayer.lineTo(52, y)
+      this.bgLayer.moveTo(w - 52, y)
+      this.bgLayer.lineTo(w - 28, y)
     }
-    for (let y = 0; y <= h; y += step) {
-      this.bgLayer.moveTo(0, y)
-      this.bgLayer.lineTo(w, y)
-    }
-    this.bgLayer.stroke({ width: 1, color: COLORS.grid, alpha: 0.35 })
-    this.bgLayer.rect(8, 8, w - 16, h - 16)
-    this.bgLayer.stroke({ width: 2, color: COLORS.grid, alpha: 0.85 })
+    this.bgLayer.stroke({ width: 1, color: 0x3d342e, alpha: 0.55 })
+    this.bgLayer.rect(10, 10, w - 20, h - 20)
+    this.bgLayer.stroke({ width: 2, color: 0x3d342e, alpha: 0.9 })
     if (mode === 'laning') {
       drawLaneOverlay(w, h, this.bgLayer)
     } else {
       const mid = w / 2
-      this.bgLayer.moveTo(mid, 12)
-      this.bgLayer.lineTo(mid, h - 12)
-      this.bgLayer.stroke({ width: 1, color: 0xc45c32, alpha: 0.22 })
+      this.bgLayer.moveTo(mid, 28)
+      this.bgLayer.lineTo(mid, h - 28)
+      this.bgLayer.stroke({ width: 2, color: 0xc45c32, alpha: 0.18 })
+      this.bgLayer.circle(mid, h * 0.5, 90)
+      this.bgLayer.stroke({ width: 1, color: 0xe8b86d, alpha: 0.12 })
     }
   }
 
@@ -141,14 +147,27 @@ export class ArenaRenderer {
     const flash = u.hitFlashTtl > 0
 
     view.ring.clear()
+    view.ring.ellipse(2, UNIT_RADIUS * 0.62, UNIT_RADIUS * 0.85, UNIT_RADIUS * 0.32)
+    view.ring.fill({ color: 0x000000, alpha: 0.35 })
+    if (u.stats.hamperRadius > 0) {
+      view.ring.circle(0, 0, u.stats.hamperRadius)
+      view.ring.stroke({ width: 1, color: COLORS.hamper, alpha: 0.18 })
+    }
+    if (u.stats.buffRadius > 0) {
+      view.ring.circle(0, 0, u.stats.buffRadius)
+      view.ring.stroke({ width: 1, color: COLORS.buff, alpha: 0.16 })
+    }
     view.ring.circle(0, 0, UNIT_RADIUS)
-    view.ring.fill({ color: teamColor, alpha: flash ? 0.95 : 0.88 })
+    view.ring.fill({ color: teamColor, alpha: flash ? 0.95 : 0.55 })
     view.ring.circle(0, 0, UNIT_RADIUS)
     view.ring.stroke({
       width: u.isPlayer ? 3 : 2,
       color: flash ? 0xffffff : stroke,
       alpha: 1,
     })
+    if (view.icon) {
+      view.icon.rotation = u.facing * 0.12
+    }
 
     view.targetRing.clear()
     if (player?.alive && playerTargetId === u.id && u.alive) {
@@ -189,6 +208,51 @@ export class ArenaRenderer {
 
     this.fxLayer.removeChildren()
     this.fxLayer.addChild(this.rangeRing)
+
+    const shake = world.shake
+    this.app.stage.x = shake ? (Math.random() - 0.5) * shake : 0
+    this.app.stage.y = shake ? (Math.random() - 0.5) * shake : 0
+
+    for (const t of world.telegraphs) {
+      const g = new Graphics()
+      const pulse = 0.35 + (1 - t.ttl / t.maxTtl) * 0.5
+      const color = t.team === 'blue' ? COLORS.ally : COLORS.foe
+      if (t.kind === 'circle') {
+        g.circle(t.to.x, t.to.y, t.radius)
+        g.fill({ color, alpha: 0.12 + pulse * 0.12 })
+        g.circle(t.to.x, t.to.y, t.radius)
+        g.stroke({ width: 2, color, alpha: 0.55 + pulse * 0.3 })
+      } else {
+        const dx = t.to.x - t.from.x
+        const dy = t.to.y - t.from.y
+        const len = Math.hypot(dx, dy) || 1
+        const nx = -dy / len
+        const ny = dx / len
+        const hw = t.radius
+        g.moveTo(t.from.x + nx * hw, t.from.y + ny * hw)
+        g.lineTo(t.to.x + nx * hw, t.to.y + ny * hw)
+        g.lineTo(t.to.x - nx * hw, t.to.y - ny * hw)
+        g.lineTo(t.from.x - nx * hw, t.from.y - ny * hw)
+        g.closePath()
+        g.fill({ color, alpha: 0.14 + pulse * 0.1 })
+        g.stroke({ width: 2, color, alpha: 0.7 })
+      }
+      this.fxLayer.addChild(g)
+    }
+
+    for (const m of world.marks) {
+      const g = new Graphics()
+      const a = Math.min(1, m.ttl * 2)
+      const col = m.kind === 'amove' ? COLORS.player : m.kind === 'ward' ? COLORS.buff : 0xe8ddd3
+      g.circle(m.x, m.y, 10)
+      g.stroke({ width: 2, color: col, alpha: a })
+      g.moveTo(m.x - 6, m.y)
+      g.lineTo(m.x + 6, m.y)
+      g.moveTo(m.x, m.y - 6)
+      g.lineTo(m.x, m.y + 6)
+      g.stroke({ width: 1.5, color: col, alpha: a })
+      this.fxLayer.addChild(g)
+    }
 
     for (const p of world.projectiles) {
       const g = new Graphics()
@@ -233,10 +297,16 @@ export class ArenaRenderer {
       if (!m.alive) continue
       const g = new Graphics()
       const color = m.team === 'blue' ? COLORS.ally : COLORS.foe
-      g.circle(m.pos.x, m.pos.y, 14)
-      g.fill({ color, alpha: 0.75 })
-      g.rect(m.pos.x - 16, m.pos.y - 22, 32 * (m.hp / m.maxHp), 3)
-      g.fill({ color: COLORS.hpHigh, alpha: 0.9 })
+      g.ellipse(m.pos.x + 1, m.pos.y + 6, 11, 5)
+      g.fill({ color: 0x000000, alpha: 0.3 })
+      g.circle(m.pos.x, m.pos.y, 11)
+      g.fill({ color, alpha: 0.82 })
+      g.circle(m.pos.x, m.pos.y, 11)
+      g.stroke({ width: 1.5, color: 0x140c08, alpha: 0.7 })
+      g.rect(m.pos.x - 14, m.pos.y - 20, 28, 3)
+      g.fill({ color: 0x0a0c08, alpha: 0.85 })
+      g.rect(m.pos.x - 14, m.pos.y - 20, 28 * (m.hp / m.maxHp), 3)
+      g.fill({ color: world.lastHitMinionId === m.id ? COLORS.player : COLORS.hpHigh, alpha: 0.95 })
       this.fxLayer.addChild(g)
     }
 

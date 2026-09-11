@@ -1,5 +1,5 @@
 import { actionForCode, loadBindings, type Bindings } from './bindings'
-import { castAbility, issueAttackMove, queueWard, useActive } from '../sim/world'
+import { addGroundMark, castAbility, issueAttackMove, queueWard, useActive } from '../sim/world'
 import { approachPoint } from '../sim/collision'
 import { attackStopDist, unitAt } from '../sim/combat'
 import type { InputFrame, World } from '../sim/types'
@@ -58,6 +58,8 @@ export function attachInput(
       return
     }
 
+    if (world.warmup > 0) return
+
     const action = actionForCode(state.bindings, e.code)
     if (!action) return
     if (action === 'scoreboard') {
@@ -79,6 +81,7 @@ export function attachInput(
       case 'attackMove': {
         const pos = state.pointer
         issueAttackMove(world, player, pos)
+        addGroundMark(world, pos.x, pos.y, 'amove')
         cancelTargeting(state)
         record(state, world, { type: 'amove', x: pos.x, y: pos.y })
         break
@@ -110,6 +113,7 @@ export function attachInput(
       case 'ward': {
         const pos = state.pointer
         if (queueWard(world, player, pos)) {
+          addGroundMark(world, pos.x, pos.y, 'ward')
           record(state, world, { type: 'ward', x: pos.x, y: pos.y })
         }
         cancelTargeting(state)
@@ -130,7 +134,7 @@ export function attachInput(
   const onContextMenu = (e: MouseEvent) => {
     e.preventDefault()
     const world = getWorld()
-    if (!world || world.ended) return
+    if (!world || world.ended || world.warmup > 0) return
     const player = world.units[world.playerId]
     if (!player?.alive) return
     const pos = screenToWorld(e.clientX, e.clientY)
@@ -143,12 +147,14 @@ export function attachInput(
       player.moveTo = approachPoint(player.pos, enemy.pos, attackStopDist(player))
       player.attackMoveTo = null
       player.pendingWard = null
+      addGroundMark(world, enemy.pos.x, enemy.pos.y, 'amove')
       record(state, world, { type: 'attack', x: pos.x, y: pos.y })
     } else {
       player.targetId = null
       player.attackMoveTo = null
       player.pendingWard = null
       player.moveTo = { ...pos }
+      addGroundMark(world, pos.x, pos.y, 'move')
       record(state, world, { type: 'move', x: pos.x, y: pos.y })
     }
   }
@@ -156,7 +162,7 @@ export function attachInput(
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return
     const world = getWorld()
-    if (!world || world.ended) return
+    if (!world || world.ended || world.warmup > 0) return
     const player = world.units[world.playerId]
     if (!player?.alive) return
     const pos = screenToWorld(e.clientX, e.clientY)
@@ -165,6 +171,7 @@ export function attachInput(
     if (state.targeting === 'attackMoveRange') {
       e.preventDefault()
       issueAttackMove(world, player, pos)
+      addGroundMark(world, pos.x, pos.y, 'amove')
       record(state, world, { type: 'amove', x: pos.x, y: pos.y })
       cancelTargeting(state)
     }

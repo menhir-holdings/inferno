@@ -73,15 +73,16 @@ function teamSpawnGeom(
   rng: ReturnType<typeof createRng>,
   arenaW: number,
   arenaH: number,
+  team: 'blue' | 'red',
 ): TeamSpawnGeom {
-  const margin = 90
+  const left = team === 'blue'
   return {
     anchor: {
-      x: margin + rng.next() * (arenaW - margin * 2),
-      y: margin + rng.next() * (arenaH - margin * 2),
+      x: left ? 160 + rng.next() * 140 : arenaW - 160 - rng.next() * 140,
+      y: 120 + rng.next() * (arenaH - 240),
     },
-    angle: rng.next() * Math.PI * 2,
-    cohesion: rng.next(),
+    angle: left ? 0 : Math.PI,
+    cohesion: 0.42 + rng.next() * 0.4,
   }
 }
 
@@ -130,8 +131,8 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
   const arenaH = 700
   const rawPositions: { pos: { x: number; y: number }; unit: Omit<ScenarioUnit, 'startPos'> }[] = []
   const teamGeom: Record<'blue' | 'red', TeamSpawnGeom> = {
-    blue: teamSpawnGeom(rng, arenaW, arenaH),
-    red: teamSpawnGeom(rng, arenaW, arenaH),
+    blue: teamSpawnGeom(rng, arenaW, arenaH, 'blue'),
+    red: teamSpawnGeom(rng, arenaW, arenaH, 'red'),
   }
 
   for (const team of ['blue', 'red'] as const) {
@@ -231,6 +232,8 @@ export function scenarioToWorld(scenario: Scenario): World {
       damageTaken: 0,
       focusScore: 0,
       hitFlashTtl: 0,
+      facing: su.team === 'blue' ? 0 : Math.PI,
+      lastMoveMark: null,
     }
   })
 
@@ -258,5 +261,12 @@ export function scenarioToWorld(scenario: Scenario): World {
     waveTimer: 4,
     lastHitMinionId: null,
     lastHitMissed: 0,
+    warmup: 3.2,
+    telegraphs: [],
+    marks: [],
+    shake: 0,
+    cues: ['count'],
+    dodges: 0,
+    nextTelegraphId: 1,
   }
 }

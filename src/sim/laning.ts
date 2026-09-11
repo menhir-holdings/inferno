@@ -133,6 +133,7 @@ export function tickLaning(world: World) {
         minion.hp = 0
         minion.alive = false
         world.playerCs += 1
+        world.cues.push('cs')
         world.floaters.push({
           x: minion.pos.x,
           y: minion.pos.y - 20,
@@ -165,9 +166,13 @@ export function drawLaneOverlay(w: number, h: number, g: {
   stroke: (style: { width: number; color: number; alpha: number }) => void
 }) {
   const mid = w / 2
-  g.rect(mid - 70, 12, 140, h - 24)
-  g.fill({ color: 0x1c1814, alpha: 0.55 })
+  g.rect(mid - 78, 12, 156, h - 24)
+  g.fill({ color: 0x2a2218, alpha: 0.72 })
+  g.rect(mid - 78, 12, 156, h - 24)
+  g.stroke({ width: 2, color: 0xc45c32, alpha: 0.2 })
   g.moveTo(mid, 12)
   g.lineTo(mid, h - 12)
-  g.stroke({ width: 1, color: 0xc45c32, alpha: 0.22 })
+  g.stroke({ width: 1, color: 0xe8b86d, alpha: 0.16 })
+  g.rect(mid - 36, h * 0.5 - 24, 72, 48)
+  g.stroke({ width: 1.5, color: 0x8f8176, alpha: 0.35 })
 }

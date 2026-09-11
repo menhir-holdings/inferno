@@ -99,6 +99,37 @@ export interface Unit {
   focusScore: number
   /** brief white flash on hit */
   hitFlashTtl: number
+  /** facing radians (for presentation) */
+  facing: number
+  /** last issued move ping */
+  lastMoveMark: Vec2 | null
+}
+
+export type CueId = 'cast' | 'hit' | 'kill' | 'cs' | 'count' | 'go' | 'ult' | 'dodge' | 'death'
+
+export type TelegraphKind = 'line' | 'circle'
+
+export interface Telegraph {
+  id: number
+  fromId: number
+  team: Team
+  kind: TelegraphKind
+  from: Vec2
+  to: Vec2
+  radius: number
+  ttl: number
+  maxTtl: number
+  slot: AbilitySlot
+  damage: number
+  /** player was inside danger at windup start */
+  playerInside: boolean
+}
+
+export interface GroundMark {
+  x: number
+  y: number
+  ttl: number
+  kind: 'move' | 'amove' | 'ward'
 }
 
 export interface DamageFloater {
@@ -184,6 +215,14 @@ export interface World {
   lastHitMinionId: number | null
   /** Minions lost while in last-hit range */
   lastHitMissed: number
+  /** Seconds of freeze before the drill goes live */
+  warmup: number
+  telegraphs: Telegraph[]
+  marks: GroundMark[]
+  shake: number
+  cues: CueId[]
+  dodges: number
+  nextTelegraphId: number
 }
 
 export interface Scenario {
