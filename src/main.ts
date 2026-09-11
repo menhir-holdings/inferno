@@ -1,5 +1,6 @@
 import './style.css'
-import { createApp, ArenaRenderer } from './render/arena'
+import { attachCanvasFit, createApp, ArenaRenderer } from './render/arena'
+import { champIconUrl } from './sim/champions'
 import { generateScenario, scenarioToWorld } from './scenario/generate'
 import { generateLaningScenario } from './scenario/laning'
 import { attachInput, createInputState, cancelTargeting, targetingLabel } from './input/controller'
@@ -16,7 +17,7 @@ import { WARD_COOLDOWN } from './sim/constants'
 import { WAVE_TELEGRAPH } from './sim/laning'
 import { scoreWorld } from './score/score'
 import { scoreLaningWorld } from './score/laning'
-import type { FightResult, Scenario, ScoreBreakdown, World } from './sim/types'
+import type { FightResult, Scenario, ScoreBreakdown, Unit, World } from './sim/types'
 
 const appRoot = document.querySelector<HTMLDivElement>('#app')!
 
@@ -29,6 +30,7 @@ let raf = 0
 let renderer: ArenaRenderer | null = null
 let pixiApp: Awaited<ReturnType<typeof createApp>> | null = null
 let detachInput: (() => void) | null = null
+let detachFit: (() => void) | null = null
 const inputState = createInputState()
 let lastScenarioSeed = Date.now() & 0xffffffff
 
@@ -123,14 +125,31 @@ async function startFight(sc: Scenario) {
   inputState.showScoreboard = false
 
   appRoot.innerHTML = ''
-  const shell = el('div', 'shell play-wrap')
-  const hud = el('div', 'hud-bar')
-  hud.id = 'hud-bar'
+  const shell = el('div', 'play-wrap')
   const host = el('div', 'canvas-host')
   host.id = 'canvas-host'
-  const abilityBar = el('div', 'ability-bar')
-  abilityBar.id = 'ability-bar'
-  shell.append(hud, host, abilityBar)
+  const overlay = el('div', 'play-hud')
+  overlay.innerHTML = `
+    <div class="play-hud-top">
+      <div class="pause-kicker play-kicker"><i></i><span id="hud-clock">—</span><i></i></div>
+      <button type="button" class="hud-exit" id="hud-exit">Exit</button>
+    </div>
+    <div class="play-stats" id="hud-stats"></div>
+    <div class="play-rail play-rail-left" id="hud-allies"></div>
+    <div class="play-rail play-rail-right" id="hud-foes"></div>
+    <div class="play-dock">
+      <div class="portrait-card" id="hud-player"></div>
+      <div class="ability-bar" id="ability-bar"></div>
+      <div class="portrait-card" id="hud-target"></div>
+    </div>
+    <p class="play-hint" id="hud-hint"></p>
+  `
+  const hint = overlay.querySelector('#hud-hint') as HTMLElement
+  hint.innerHTML =
+    'RMB · A · X+click · QWER · 1234 · S · Tab · Esc · <button type="button" class="settings-link" id="hud-hotkeys">Hotkeys</button>'
+  overlay.querySelector('#hud-exit')!.addEventListener('click', () => showHome())
+  overlay.querySelector('#hud-hotkeys')!.addEventListener('click', () => openBindingsModal())
+  shell.append(host, overlay)
   appRoot.append(shell)
 
   pixiApp = await createApp(host, world.arena.w, world.arena.h)
@@ -138,6 +157,7 @@ async function startFight(sc: Scenario) {
   await renderer.bootstrapUnits(world)
 
   const canvas = pixiApp.canvas
+  detachFit = attachCanvasFit(host, canvas, world.arena.w, world.arena.h)
   const rect = () => canvas.getBoundingClientRect()
   detachInput = attachInput(
     canvas,
@@ -187,41 +207,110 @@ function frame(now: number) {
   raf = requestAnimationFrame(frame)
 }
 
+function hpPct(u: Unit) {
+  return Math.max(0, Math.min(100, (u.hp / u.stats.maxHp) * 100))
+}
+
+function chipHtml(u: Unit) {
+  const cls = [
+    'portrait-chip',
+    u.isPlayer ? 'player' : '',
+    u.team === 'red' ? 'foe' : 'ally',
+    !u.alive ? 'dead' : '',
+    hpPct(u) <= 35 ? 'hurt' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  return `<div class="${cls}" data-id="${u.id}">
+    <img src="${champIconUrl(u.champId)}" alt="" draggable="false">
+    <div class="hp-track"><i style="width:${hpPct(u)}%"></i></div>
+  </div>`
+}
+
+function syncRail(node: HTMLElement | null, units: Unit[]) {
+  if (!node) return
+  const ids = units.map((u) => String(u.id)).join(',')
+  if (node.dataset.ids !== ids) {
+    node.dataset.ids = ids
+    node.innerHTML = units.map(chipHtml).join('')
+  }
+  for (const u of units) {
+    const chip = node.querySelector(`[data-id="${u.id}"]`)
+    if (!chip) continue
+    chip.classList.toggle('dead', !u.alive)
+    chip.classList.toggle('hurt', hpPct(u) <= 35)
+    const fill = chip.querySelector('i') as HTMLElement | null
+    if (fill) fill.style.width = `${hpPct(u)}%`
+  }
+}
+
+function portraitCardHtml(u: Unit | null, empty: string) {
+  if (!u) return `<div class="portrait-card-empty">${empty}</div>`
+  const hp = Math.max(0, Math.round(u.hp))
+  const face = ['portrait-face', u.team === 'red' ? 'foe' : 'ally', u.isPlayer ? 'player' : '', !u.alive ? 'dead' : '']
+    .filter(Boolean)
+    .join(' ')
+  return `
+    <div class="${face}"><img src="${champIconUrl(u.champId)}" alt="" draggable="false"></div>
+    <div class="portrait-meta">
+      <strong>${u.champName}</strong>
+      <span>${u.archetype}</span>
+      <div class="hp-track hp-track-wide${hpPct(u) <= 35 ? ' hurt-bar' : ''}"><i style="width:${hpPct(u)}%"></i></div>
+      <em>${hp} / ${u.stats.maxHp}</em>
+    </div>
+  `
+}
+
+function syncPortraitCard(node: HTMLElement | null, u: Unit | null, empty: string) {
+  if (!node) return
+  const id = u ? String(u.id) : ''
+  if (node.dataset.id !== id) {
+    node.dataset.id = id
+    node.innerHTML = portraitCardHtml(u, empty)
+    return
+  }
+  if (!u) return
+  node.querySelector('.portrait-face')?.classList.toggle('dead', !u.alive)
+  const track = node.querySelector('.hp-track')
+  track?.classList.toggle('hurt-bar', hpPct(u) <= 35)
+  const fill = node.querySelector('.hp-track i') as HTMLElement | null
+  if (fill) fill.style.width = `${hpPct(u)}%`
+  const em = node.querySelector('em')
+  if (em) em.textContent = `${Math.max(0, Math.round(u.hp))} / ${u.stats.maxHp}`
+}
+
 function updateHud() {
-  const bar = document.getElementById('hud-bar')
-  if (!bar || !world) return
+  if (!world) return
   const p = world.units[world.playerId]!
   const remain = Math.max(0, world.duration - world.time)
+  const clock = document.getElementById('hud-clock')
+  if (clock) clock.textContent = `${remain.toFixed(1)}s`
   const target = p.targetId != null ? world.units[p.targetId] : null
   const mode = targetingLabel(inputState.targeting)
-  const modeBadge = mode ? `<div class="stat mode-pill"><strong>${mode}</strong></div>` : ''
-  const targetLine = target?.alive
-    ? `<div class="stat">Target <strong>${target.champName}</strong></div>`
-    : '<div class="stat">Target <strong>—</strong></div>'
-  const csLine =
-    world.mode === 'laning'
-      ? `<div class="stat">CS <strong>${world.playerCs}</strong></div>`
-      : ''
-  const waveLine =
-    world.mode === 'laning' && world.waveTimer <= WAVE_TELEGRAPH
-      ? `<div class="stat stat-wave">Wave <strong>${world.waveTimer.toFixed(0)}s</strong></div>`
-      : ''
-  const lastHitLine =
-    world.mode === 'laning' && world.lastHitMinionId != null
-      ? `<div class="stat stat-lasthit">Last hit <strong>!</strong></div>`
-      : ''
-  bar.innerHTML = `
-    <div class="stat">Time <strong>${remain.toFixed(1)}s</strong></div>
-    <div class="stat">${p.champName} <strong>${p.archetype}</strong></div>
-    <div class="stat">HP <strong>${Math.max(0, Math.round(p.hp))}</strong>/${p.stats.maxHp}</div>
-    ${csLine}
-    ${waveLine}
-    ${lastHitLine}
-    ${targetLine}
-    ${modeBadge}
-    <div class="stat">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'off'}</strong></div>
-    <div class="hint">RMB · A (A-move) · X+click · 4 ward · S · Tab · Esc</div>
-  `
+  const stats = document.getElementById('hud-stats')
+  if (stats) {
+    const chips: string[] = []
+    if (mode) chips.push(`<span class="stat-pill mode-pill">${mode}</span>`)
+    if (world.mode === 'laning') chips.push(`<span class="stat-pill">CS <strong>${world.playerCs}</strong></span>`)
+    if (world.mode === 'laning' && world.waveTimer <= WAVE_TELEGRAPH) {
+      chips.push(`<span class="stat-pill stat-wave">Wave <strong>${world.waveTimer.toFixed(0)}s</strong></span>`)
+    }
+    if (world.mode === 'laning' && world.lastHitMinionId != null) {
+      chips.push(`<span class="stat-pill stat-lasthit">Last hit <strong>!</strong></span>`)
+    }
+    chips.push(`<span class="stat-pill">AOT <strong>${world.attackChampionsOnly ? 'ON' : 'off'}</strong></span>`)
+    stats.innerHTML = chips.join('')
+  }
+  syncRail(
+    document.getElementById('hud-allies'),
+    world.units.filter((u) => u.team === p.team).sort((a, b) => a.id - b.id),
+  )
+  syncRail(
+    document.getElementById('hud-foes'),
+    world.units.filter((u) => u.team !== p.team).sort((a, b) => a.id - b.id),
+  )
+  syncPortraitCard(document.getElementById('hud-player'), p, 'You')
+  syncPortraitCard(document.getElementById('hud-target'), target?.alive ? target : null, 'No target')
 }
 
 function updateAbilityBar() {
@@ -350,10 +439,11 @@ function syncDeathRematch() {
 }
 
 function showDebrief(score: ScoreBreakdown) {
-  const shell = appRoot.querySelector('.shell')
+  const shell = appRoot.querySelector('.play-wrap')
   if (!shell || !scenario || !world) return
   document.querySelector('.debrief')?.remove()
   const box = el('div', 'debrief')
+  document.querySelector('.play-hud')?.classList.add('play-hud-ended')
   const headline =
     world.result === 'victory'
       ? 'Victory'
@@ -467,6 +557,8 @@ function stopLoop() {
 function cleanupFight() {
   detachInput?.()
   detachInput = null
+  detachFit?.()
+  detachFit = null
   renderer?.destroy()
   renderer = null
   pixiApp = null

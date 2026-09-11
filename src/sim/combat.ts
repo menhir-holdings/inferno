@@ -75,7 +75,7 @@ export function dealDamage(
     y: target.pos.y - UNIT_RADIUS - 6,
     text: String(Math.round(dmg)),
     ttl: 0.75,
-    color: isFocus ? 0xc4f000 : 0xffffff,
+    color: isFocus ? 0xff5a1a : 0xe8ddd3,
   })
   if (isFocus && target.archetype !== 'tank') {
     attacker.focusScore += dmg * (target.hp / target.stats.maxHp < 0.4 ? 1.4 : 1)
