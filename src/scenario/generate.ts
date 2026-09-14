@@ -235,6 +235,22 @@ export function scenarioToWorld(scenario: Scenario): World {
     }
   })
 
+  const blue = units.filter((u) => u.team === 'blue')
+  const red = units.filter((u) => u.team === 'red')
+  const centroid = (list: Unit[]) => {
+    if (!list.length) return { x: arena.w / 2, y: arena.h / 2 }
+    return {
+      x: list.reduce((s, u) => s + u.pos.x, 0) / list.length,
+      y: list.reduce((s, u) => s + u.pos.y, 0) / list.length,
+    }
+  }
+  const blueC = centroid(blue)
+  const redC = centroid(red)
+  for (const u of units) {
+    const aim = u.team === 'blue' ? redC : blueC
+    u.facing = Math.atan2(aim.y - u.pos.y, aim.x - u.pos.x)
+  }
+
   return {
     seed: scenario.seed,
     mode: scenario.mode,
