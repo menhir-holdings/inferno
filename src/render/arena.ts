@@ -42,12 +42,7 @@ export class ArenaRenderer {
     this.bgLayer.clear()
     this.bgLayer.rect(0, 0, w, h)
     this.bgLayer.fill({ color: 0x161310 })
-    this.bgLayer.ellipse(w * 0.5, h * 0.52, w * 0.46, h * 0.38)
-    this.bgLayer.fill({ color: 0x1c1814, alpha: 0.9 })
-    this.bgLayer.ellipse(w * 0.5, h * 0.52, w * 0.28, h * 0.22)
-    this.bgLayer.stroke({ width: 2, color: 0xc45c32, alpha: 0.22 })
-    this.bgLayer.ellipse(w * 0.5, h * 0.52, 48, 36)
-    this.bgLayer.stroke({ width: 1.5, color: 0x8f8176, alpha: 0.28 })
+    // MT-225: dropped decorative pit ellipses (vignette ovals, not a skills-range floor).
     for (let i = 0; i < 7; i++) {
       const y = 70 + i * ((h - 140) / 6)
       this.bgLayer.moveTo(28, y)
@@ -208,10 +203,8 @@ export class ArenaRenderer {
 
     this.fxLayer.removeChildren()
     this.fxLayer.addChild(this.rangeRing)
-
-    const shake = world.shake
-    this.app.stage.x = shake ? (Math.random() - 0.5) * shake : 0
-    this.app.stage.y = shake ? (Math.random() - 0.5) * shake : 0
+    this.app.stage.x = 0
+    this.app.stage.y = 0
 
     for (const t of world.telegraphs) {
       const g = new Graphics()

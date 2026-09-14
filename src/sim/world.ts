@@ -7,6 +7,7 @@ import {
   attackStopDist,
   dealDamage,
   dist,
+  inAaRange,
   enemiesOf,
   nearestEnemy,
   alliesOf,
@@ -40,7 +41,7 @@ export function issueAttackMove(world: World, u: Unit, pos: Vec2) {
   if (pick) {
     u.targetId = pick.id
     u.attackMoveTo = null
-    u.moveTo = approachPoint(u.pos, pick.pos, attackStopDist(u))
+    u.moveTo = inAaRange(u, pick) ? null : { ...pick.pos }
   } else {
     u.targetId = null
     u.moveTo = null
@@ -100,19 +101,16 @@ function tryAutoAttack(world: World, u: Unit) {
     u.targetId = null
     return
   }
-  const range = u.stats.aaRange
   const stop = attackStopDist(u)
   const d = dist(u.pos, target.pos)
-  const inMeleeRange = u.stats.melee && d <= range
-  const inRangedRange = !u.stats.melee && d <= range + 4
 
-  if (!inMeleeRange && !inRangedRange) {
-    u.moveTo = approachPoint(u.pos, target.pos, stop)
+  if (!inAaRange(u, target)) {
+    u.moveTo = { ...target.pos }
     return
   }
 
   if (u.stats.melee && d > stop + 1) {
-    u.moveTo = approachPoint(u.pos, target.pos, stop)
+    u.moveTo = { ...target.pos }
     return
   }
 
@@ -331,7 +329,6 @@ function releaseCast(world: World, t: Telegraph) {
         u.pos = clampToArena(u.pos, world.arena, UNIT_RADIUS)
       }
     }
-    world.shake = Math.max(world.shake, 8)
   } else {
     const n = norm(u.pos, t.to)
     const speed = u.archetype === 'mage' ? 820 : 700
@@ -545,8 +542,6 @@ function aiTick(world: World, u: Unit) {
 export function tickWorld(world: World) {
   if (world.ended) return
 
-  world.shake *= 0.82
-  if (world.shake < 0.15) world.shake = 0
   for (const m of world.marks) m.ttl -= DT
   world.marks = world.marks.filter((m) => m.ttl > 0)
 
@@ -592,10 +587,24 @@ export function tickWorld(world: World) {
         )
         u.targetId = pick.id
         u.attackMoveTo = null
-        u.moveTo = approachPoint(u.pos, pick.pos, attackStopDist(u))
+        u.moveTo = inAaRange(u, pick) ? null : { ...pick.pos }
       } else {
         const arrived = stepMove(world, u, u.attackMoveTo, UNIT_RADIUS)
         if (arrived) u.attackMoveTo = null
+      }
+    } else if (u.isPlayer && u.targetId != null && !u.pendingWard) {
+      const target = world.units[u.targetId]
+      if (target?.alive && target.id === u.targetId) {
+        if (!u.stats.melee && inAaRange(u, target)) {
+          u.moveTo = null
+        } else {
+          const dest = { ...target.pos }
+          const arrived = stepMove(world, u, dest, attackStopDist(u))
+          u.moveTo = arrived ? null : dest
+        }
+      } else if (u.moveTo) {
+        const arrived = stepMove(world, u, u.moveTo, UNIT_RADIUS * 0.5)
+        if (arrived) u.moveTo = null
       }
     } else if (u.moveTo) {
       const stop = u.targetId != null ? attackStopDist(u) : UNIT_RADIUS * 0.5

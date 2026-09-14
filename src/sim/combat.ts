@@ -6,6 +6,12 @@ export function attackStopDist(u: Unit): number {
   return u.stats.aaRange * 0.92
 }
 
+/** Center-to-center AA reach. Ranged gets a small slack so they fire without closing. */
+export function inAaRange(u: Unit, target: { pos: Vec2 }): boolean {
+  const slack = u.stats.melee ? 0 : 4
+  return dist(u.pos, target.pos) <= u.stats.aaRange + slack
+}
+
 export function dist(a: Vec2, b: Vec2): number {
   const dx = a.x - b.x
   const dy = a.y - b.y
@@ -71,7 +77,6 @@ export function dealDamage(
   target.hitFlashTtl = 0.12
   attacker.damageDealt += dmg
   world.cues.push('hit')
-  world.shake = Math.max(world.shake, isFocus ? 5 : 2.4)
   world.floaters.push({
     x: target.pos.x + (Math.random() - 0.5) * 16,
     y: target.pos.y - UNIT_RADIUS - 6,
@@ -88,7 +93,6 @@ export function dealDamage(
     target.deaths += 1
     attacker.kills += 1
     world.cues.push(target.isPlayer ? 'death' : 'kill')
-    world.shake = Math.max(world.shake, target.isPlayer ? 10 : 7)
     if (target.isPlayer) {
       target.targetId = null
       target.moveTo = null

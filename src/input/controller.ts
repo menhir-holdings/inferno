@@ -1,7 +1,6 @@
 import { actionForCode, loadBindings, type Bindings } from './bindings'
 import { addGroundMark, castAbility, issueAttackMove, queueWard, useActive } from '../sim/world'
-import { approachPoint } from '../sim/collision'
-import { attackStopDist, unitAt } from '../sim/combat'
+import { inAaRange, unitAt } from '../sim/combat'
 import type { InputFrame, World } from '../sim/types'
 
 export type TargetingMode = 'none' | 'attackMoveRange'
@@ -141,12 +140,12 @@ export function attachInput(
     state.pointer = pos
     cancelTargeting(state)
 
-    const enemy = unitAt(world, pos, 40, player.team === 'blue' ? 'red' : 'blue')
+    const enemy = unitAt(world, pos, 52, player.team === 'blue' ? 'red' : 'blue')
     if (enemy) {
       player.targetId = enemy.id
-      player.moveTo = approachPoint(player.pos, enemy.pos, attackStopDist(player))
       player.attackMoveTo = null
       player.pendingWard = null
+      player.moveTo = inAaRange(player, enemy) ? null : { ...enemy.pos }
       addGroundMark(world, enemy.pos.x, enemy.pos.y, 'amove')
       record(state, world, { type: 'attack', x: pos.x, y: pos.y })
     } else {

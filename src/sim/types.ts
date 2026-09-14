@@ -219,7 +219,6 @@ export interface World {
   warmup: number
   telegraphs: Telegraph[]
   marks: GroundMark[]
-  shake: number
   cues: CueId[]
   dodges: number
   nextTelegraphId: number

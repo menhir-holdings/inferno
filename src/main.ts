@@ -1,6 +1,6 @@
 import './style.css'
 import { attachCanvasFit, createApp, ArenaRenderer } from './render/arena'
-import { champIconUrl } from './sim/champions'
+import { CHAMPIONS, champIconUrl } from './sim/champions'
 import { generateScenario, scenarioToWorld } from './scenario/generate'
 import { generateLaningScenario } from './scenario/laning'
 import { attachInput, createInputState, cancelTargeting, targetingLabel } from './input/controller'
@@ -34,7 +34,38 @@ let pixiApp: Awaited<ReturnType<typeof createApp>> | null = null
 let detachInput: (() => void) | null = null
 let detachFit: (() => void) | null = null
 const inputState = createInputState()
-let lastScenarioSeed = Date.now() & 0xffffffff
+const CHAMP_KEY = 'inferno.playerChamp'
+
+function loadPickedChamp(): string {
+  try {
+    const id = localStorage.getItem(CHAMP_KEY)
+    if (id && CHAMPIONS.some((c) => c.id === id)) return id
+  } catch {
+    /* ignore */
+  }
+  return 'Jinx'
+}
+
+function savePickedChamp(id: string) {
+  try {
+    localStorage.setItem(CHAMP_KEY, id)
+  } catch {
+    /* ignore */
+  }
+}
+
+let pickedChampId = loadPickedChamp()
+
+function freshSeed() {
+  return (Math.random() * 0xffffffff) >>> 0
+}
+
+function rememberPlayerChamp(sc: Scenario) {
+  const u = sc.units[sc.playerSlot]
+  if (!u) return
+  pickedChampId = u.champId
+  savePickedChamp(u.champId)
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -84,12 +115,36 @@ function showHome() {
   hud.append(ooda)
 
   const sheet = el('div', 'mode-sheet')
-  sheet.append(el('p', 'pick-label', 'Pick your drill'))
+  sheet.append(el('p', 'pick-label', 'Your champ'))
+  const grid = el('div', 'champ-grid')
+  grid.setAttribute('role', 'listbox')
+  grid.setAttribute('aria-label', 'Champion')
+  for (const champ of CHAMPIONS) {
+    const cell = el('button', `champ-cell${champ.id === pickedChampId ? ' picked' : ''}`) as HTMLButtonElement
+    cell.type = 'button'
+    cell.title = `${champ.name} · ${champ.archetype}`
+    cell.setAttribute('role', 'option')
+    cell.setAttribute('aria-selected', champ.id === pickedChampId ? 'true' : 'false')
+    cell.innerHTML = `<img src="${champIconUrl(champ.id)}" alt="" draggable="false"><span>${champ.name}</span>`
+    cell.addEventListener('click', () => {
+      pickedChampId = champ.id
+      savePickedChamp(champ.id)
+      grid.querySelectorAll('.champ-cell').forEach((n) => {
+        n.classList.remove('picked')
+        n.setAttribute('aria-selected', 'false')
+      })
+      cell.classList.add('picked')
+      cell.setAttribute('aria-selected', 'true')
+    })
+    grid.append(cell)
+  }
+  sheet.append(grid)
+  sheet.append(el('p', 'pick-label pick-drill', 'Pick your drill'))
   const stack = el('div', 'mode-stack')
   const fire = modeCard('Teamfight', 'Five champs. Telegraphs. Dodge, focus, execute.', 'go')
-  fire.addEventListener('click', () => startTeamfight(lastScenarioSeed))
+  fire.addEventListener('click', () => startTeamfight(freshSeed(), undefined, pickedChampId))
   const lane = modeCard('Laning', 'Wave clock, last-hit window, punish their CS.', 'open')
-  lane.addEventListener('click', () => startLaning((lastScenarioSeed ^ 0x1a4e) >>> 0))
+  lane.addEventListener('click', () => startLaning(freshSeed(), undefined, pickedChampId))
   const jungle = modeCard('Jungle', 'Pathing under fog — shelved.', 'shelved')
   stack.append(fire, lane, jungle)
   sheet.append(stack)
@@ -104,15 +159,13 @@ function showHome() {
   appRoot.append(world, shell)
 }
 
-async function startTeamfight(seed: number, existing?: Scenario) {
-  lastScenarioSeed = seed
-  scenario = existing ?? generateScenario(seed, 60)
+async function startTeamfight(seed: number, existing?: Scenario, playerChampId?: string) {
+  scenario = existing ?? generateScenario(seed, 60, playerChampId ? { playerChampId } : undefined)
   await startFight(scenario)
 }
 
-async function startLaning(seed: number, existing?: Scenario) {
-  lastScenarioSeed = seed
-  scenario = existing ?? generateLaningScenario(seed, 90)
+async function startLaning(seed: number, existing?: Scenario, playerChampId?: string) {
+  scenario = existing ?? generateLaningScenario(seed, 90, playerChampId ? { playerChampId } : undefined)
   await startFight(scenario)
 }
 
@@ -120,6 +173,7 @@ async function startFight(sc: Scenario) {
   stopLoop()
   cleanupFight()
   scenario = sc
+  rememberPlayerChamp(sc)
   world = scenarioToWorld(scenario)
   inputState.recording = []
   inputState.targeting = 'none'
@@ -434,19 +488,23 @@ function showOutcome(result: FightResult) {
 }
 
 function rematchActions(container: HTMLElement) {
-  const again = el('button', 'btn primary', 'Fight again')
-  again.addEventListener('click', () =>
-    scenario!.mode === 'laning'
-      ? startLaning(scenario!.seed, scenario!)
-      : startTeamfight(scenario!.seed, scenario!),
+  const sc = scenario!
+  const champId = sc.units[sc.playerSlot]?.champId
+  const same = el('button', 'btn primary', 'Same champ, new fight')
+  same.addEventListener('click', () => {
+    const seed = freshSeed()
+    sc.mode === 'laning' ? startLaning(seed, undefined, champId) : startTeamfight(seed, undefined, champId)
+  })
+  const exact = el('button', 'btn', 'Exact rematch')
+  exact.addEventListener('click', () =>
+    sc.mode === 'laning' ? startLaning(sc.seed, sc) : startTeamfight(sc.seed, sc),
   )
-  const regen = el('button', 'btn', 'New fight')
-  regen.addEventListener('click', () =>
-    scenario!.mode === 'laning'
-      ? startLaning((Math.random() * 1e9) | 0)
-      : startTeamfight((Math.random() * 1e9) | 0),
-  )
-  container.append(again, regen)
+  const random = el('button', 'btn', 'Random champ')
+  random.addEventListener('click', () => {
+    const seed = freshSeed()
+    sc.mode === 'laning' ? startLaning(seed) : startTeamfight(seed)
+  })
+  container.append(same, exact, random)
 }
 
 /** Mid-fight death: rematch without waiting for team wipe. */
