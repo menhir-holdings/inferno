@@ -6,6 +6,12 @@ export function attackStopDist(u: Unit): number {
   return u.stats.aaRange * 0.92
 }
 
+/** Center-to-center AA reach. Ranged gets slack so they fire without closing to melee. */
+export function inAaRange(u: Unit, target: { pos: Vec2 }): boolean {
+  const slack = u.stats.melee ? 0 : 4
+  return dist(u.pos, target.pos) <= u.stats.aaRange + slack
+}
+
 export function dist(a: Vec2, b: Vec2): number {
   const dx = a.x - b.x
   const dy = a.y - b.y
@@ -109,3 +115,4 @@ export function abilityDamage(caster: Unit, slot: AbilitySlot): number {
 export function aaDamage(attacker: Unit): number {
   return attacker.stats.aaDamage * (1 + attacker.dpsBuff)
 }
+

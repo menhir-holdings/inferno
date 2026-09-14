@@ -1,7 +1,6 @@
 import { actionForCode, loadBindings, type Bindings } from './bindings'
-import { castAbility, issueAttackMove, queueWard, useActive } from '../sim/world'
-import { approachPoint } from '../sim/collision'
-import { attackStopDist, unitAt } from '../sim/combat'
+import { addGroundMark, castAbility, issueAttack, issueAttackMove, queueWard, useActive } from '../sim/world'
+import { unitAt } from '../sim/combat'
 import type { InputFrame, World } from '../sim/types'
 
 export type TargetingMode = 'none' | 'attackMoveRange'
@@ -44,8 +43,14 @@ export function attachInput(
   canvas: HTMLCanvasElement,
   getWorld: () => World | null,
   state: InputState,
-  screenToWorld: (x: number, y: number) => { x: number; y: number },
+  screenToWorld: (x: number, y: number) => { x: number; y: number } | null,
 ) {
+  const aimAt = (clientX: number, clientY: number) => {
+    const hit = screenToWorld(clientX, clientY)
+    if (hit) state.pointer = hit
+    return hit
+  }
+
   const onKeyDown = (e: KeyboardEvent) => {
     const world = getWorld()
     if (!world || world.ended) return
@@ -57,6 +62,8 @@ export function attachInput(
       player.pendingWard = null
       return
     }
+
+    if (world.warmup > 0) return
 
     const action = actionForCode(state.bindings, e.code)
     if (!action) return
@@ -79,6 +86,7 @@ export function attachInput(
       case 'attackMove': {
         const pos = state.pointer
         issueAttackMove(world, player, pos)
+        addGroundMark(world, pos.x, pos.y, 'amove')
         cancelTargeting(state)
         record(state, world, { type: 'amove', x: pos.x, y: pos.y })
         break
@@ -110,6 +118,7 @@ export function attachInput(
       case 'ward': {
         const pos = state.pointer
         if (queueWard(world, player, pos)) {
+          addGroundMark(world, pos.x, pos.y, 'ward')
           record(state, world, { type: 'ward', x: pos.x, y: pos.y })
         }
         cancelTargeting(state)
@@ -130,25 +139,24 @@ export function attachInput(
   const onContextMenu = (e: MouseEvent) => {
     e.preventDefault()
     const world = getWorld()
-    if (!world || world.ended) return
+    if (!world || world.ended || world.warmup > 0) return
     const player = world.units[world.playerId]
     if (!player?.alive) return
-    const pos = screenToWorld(e.clientX, e.clientY)
-    state.pointer = pos
+    const pos = aimAt(e.clientX, e.clientY)
+    if (!pos) return
     cancelTargeting(state)
 
-    const enemy = unitAt(world, pos, 40, player.team === 'blue' ? 'red' : 'blue')
+    const enemy = unitAt(world, pos, 52, player.team === 'blue' ? 'red' : 'blue')
     if (enemy) {
-      player.targetId = enemy.id
-      player.moveTo = approachPoint(player.pos, enemy.pos, attackStopDist(player))
-      player.attackMoveTo = null
-      player.pendingWard = null
+      issueAttack(player, enemy)
+      addGroundMark(world, enemy.pos.x, enemy.pos.y, 'amove')
       record(state, world, { type: 'attack', x: pos.x, y: pos.y })
     } else {
       player.targetId = null
       player.attackMoveTo = null
       player.pendingWard = null
       player.moveTo = { ...pos }
+      addGroundMark(world, pos.x, pos.y, 'move')
       record(state, world, { type: 'move', x: pos.x, y: pos.y })
     }
   }
@@ -156,22 +164,23 @@ export function attachInput(
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return
     const world = getWorld()
-    if (!world || world.ended) return
+    if (!world || world.ended || world.warmup > 0) return
     const player = world.units[world.playerId]
     if (!player?.alive) return
-    const pos = screenToWorld(e.clientX, e.clientY)
-    state.pointer = pos
+    const pos = aimAt(e.clientX, e.clientY)
+    if (!pos) return
 
     if (state.targeting === 'attackMoveRange') {
       e.preventDefault()
       issueAttackMove(world, player, pos)
+      addGroundMark(world, pos.x, pos.y, 'amove')
       record(state, world, { type: 'amove', x: pos.x, y: pos.y })
       cancelTargeting(state)
     }
   }
 
   const onMove = (e: PointerEvent) => {
-    state.pointer = screenToWorld(e.clientX, e.clientY)
+    aimAt(e.clientX, e.clientY)
   }
 
   window.addEventListener('keydown', onKeyDown)

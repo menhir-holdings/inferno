@@ -99,6 +99,8 @@ export interface Unit {
   focusScore: number
   /** brief white flash on hit */
   hitFlashTtl: number
+  /** facing radians on the ground plane (presentation + blob-turn) */
+  facing: number
 }
 
 export interface DamageFloater {
@@ -157,6 +159,29 @@ export interface Minion {
 
 export type FightResult = 'victory' | 'defeat' | 'timeout' | null
 
+export type TelegraphKind = 'line' | 'circle'
+
+export interface Telegraph {
+  id: number
+  fromId: number
+  team: Team
+  kind: TelegraphKind
+  from: Vec2
+  to: Vec2
+  radius: number
+  ttl: number
+  maxTtl: number
+  slot: AbilitySlot
+  damage: number
+}
+
+export interface GroundMark {
+  x: number
+  y: number
+  ttl: number
+  kind: 'move' | 'amove' | 'ward'
+}
+
 export interface World {
   seed: number
   mode: ModeId
@@ -184,6 +209,11 @@ export interface World {
   lastHitMinionId: number | null
   /** Minions lost while in last-hit range */
   lastHitMissed: number
+  /** Seconds of freeze before the drill goes live */
+  warmup: number
+  telegraphs: Telegraph[]
+  marks: GroundMark[]
+  nextTelegraphId: number
 }
 
 export interface Scenario {

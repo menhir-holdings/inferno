@@ -231,6 +231,7 @@ export function scenarioToWorld(scenario: Scenario): World {
       damageTaken: 0,
       focusScore: 0,
       hitFlashTtl: 0,
+      facing: 0,
     }
   })
 
@@ -258,5 +259,9 @@ export function scenarioToWorld(scenario: Scenario): World {
     waveTimer: 4,
     lastHitMinionId: null,
     lastHitMissed: 0,
+    warmup: 3,
+    telegraphs: [],
+    marks: [],
+    nextTelegraphId: 1,
   }
 }
