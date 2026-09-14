@@ -40,10 +40,13 @@ export function scoreWorld(world: World): ScoreBreakdown {
 
   const usedR = player.abilities.r.spent
   const usedActives = player.actives.some((a) => !a.ready && a.cooldown < a.maxCooldown - 1)
+  const dodgePts = Math.min(20, world.dodges * 8)
   const execution = Math.min(
     100,
-    Math.round(40 + (usedR ? 25 : 0) + (usedActives ? 15 : 0) + Math.min(25, player.damageDealt / 30)),
+    Math.round(40 + (usedR ? 25 : 0) + (usedActives ? 15 : 0) + Math.min(25, player.damageDealt / 30) + dodgePts),
   )
+
+  if (world.dodges > 0) notes.push(`Stepped ${world.dodges} telegraph${world.dodges === 1 ? '' : 's'} — OODA under paint.`)
 
   if (focus >= 70) notes.push('Strong focus — damage tracked onto priority bodies.')
   else if (focus < 45) notes.push('Focus was loose — hit carries and wounded targets when tanks are fronting.')

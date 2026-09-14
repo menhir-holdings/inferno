@@ -1,6 +1,6 @@
 # Inferno
 
-Endless LoL-targeted skills trainer. Modes: **Teamfight**, Laning Phase, Jungle.
+Endless LoL-targeted skills trainer. Modes: **Teamfight**, Laning Phase. Jungle is shelved.
 
 Train the **OODA** loop — Observe, Orient, Decide, Act — under fight pressure without a full client sim.
 
@@ -14,7 +14,7 @@ Train the **OODA** loop — Observe, Orient, Decide, Act — under fight pressur
 ## Run
 
 ```bash
-cd "Menhir Holdings/Workshop/Inferno"
+cd "Menhir Holdings/Game/Inferno"
 npm install
 npm run dev
 ```

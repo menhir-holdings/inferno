@@ -73,15 +73,16 @@ function teamSpawnGeom(
   rng: ReturnType<typeof createRng>,
   arenaW: number,
   arenaH: number,
+  team: 'blue' | 'red',
 ): TeamSpawnGeom {
-  const margin = 90
+  const left = team === 'blue'
   return {
     anchor: {
-      x: margin + rng.next() * (arenaW - margin * 2),
-      y: margin + rng.next() * (arenaH - margin * 2),
+      x: left ? 160 + rng.next() * 140 : arenaW - 160 - rng.next() * 140,
+      y: 120 + rng.next() * (arenaH - 240),
     },
-    angle: rng.next() * Math.PI * 2,
-    cohesion: rng.next(),
+    angle: left ? 0 : Math.PI,
+    cohesion: 0.42 + rng.next() * 0.4,
   }
 }
 
@@ -112,7 +113,37 @@ function unitSpawnInCluster(
   }
 }
 
-export function generateScenario(seed: number, durationSec = 45): Scenario {
+export interface GenerateOpts {
+  playerChampId?: string
+}
+
+export function champById(id: string) {
+  return CHAMPIONS.find((c) => c.id === id) ?? null
+}
+
+export function applyPlayerChamp(units: ScenarioUnit[], playerSlot: number, champId?: string) {
+  if (!champId) return
+  const champ = champById(champId)
+  if (!champ) return
+  const player = units[playerSlot]
+  if (!player) return
+  player.champId = champ.id
+  player.champName = champ.name
+  player.archetype = champ.archetype
+  for (const u of units) {
+    if (u === player || u.champId !== champ.id) continue
+    const used = new Set(units.map((x) => x.champId))
+    used.delete(u.champId)
+    const pool = CHAMPIONS.filter((c) => c.archetype === u.archetype && !used.has(c.id))
+    const alt = pool[0] ?? CHAMPIONS.find((c) => !used.has(c.id))
+    if (!alt) continue
+    u.champId = alt.id
+    u.champName = alt.name
+    u.archetype = alt.archetype
+  }
+}
+
+export function generateScenario(seed: number, durationSec = 45, opts?: GenerateOpts): Scenario {
   const rng = createRng(seed)
   const byArch = {
     assassin: CHAMPIONS.filter((c) => c.archetype === 'assassin'),
@@ -130,8 +161,8 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
   const arenaH = 700
   const rawPositions: { pos: { x: number; y: number }; unit: Omit<ScenarioUnit, 'startPos'> }[] = []
   const teamGeom: Record<'blue' | 'red', TeamSpawnGeom> = {
-    blue: teamSpawnGeom(rng, arenaW, arenaH),
-    red: teamSpawnGeom(rng, arenaW, arenaH),
+    blue: teamSpawnGeom(rng, arenaW, arenaH, 'blue'),
+    red: teamSpawnGeom(rng, arenaW, arenaH, 'red'),
   }
 
   for (const team of ['blue', 'red'] as const) {
@@ -180,6 +211,7 @@ export function generateScenario(seed: number, durationSec = 45): Scenario {
   }))
 
   const playerSlot = rng.int(0, 4) // blue team slot
+  applyPlayerChamp(units, playerSlot, opts?.playerChampId)
 
   return {
     seed,
@@ -231,6 +263,8 @@ export function scenarioToWorld(scenario: Scenario): World {
       damageTaken: 0,
       focusScore: 0,
       hitFlashTtl: 0,
+      facing: su.team === 'blue' ? 0 : Math.PI,
+      lastMoveMark: null,
     }
   })
 
@@ -258,5 +292,11 @@ export function scenarioToWorld(scenario: Scenario): World {
     waveTimer: 4,
     lastHitMinionId: null,
     lastHitMissed: 0,
+    warmup: 3.2,
+    telegraphs: [],
+    marks: [],
+    cues: ['count'],
+    dodges: 0,
+    nextTelegraphId: 1,
   }
 }
