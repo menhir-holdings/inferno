@@ -487,24 +487,32 @@ function showOutcome(result: FightResult) {
   host.append(box)
 }
 
+function rematchBtn(kind: 'primary' | '', title: string, note: string) {
+  const btn = el('button', kind ? `btn ${kind}` : 'btn')
+  btn.innerHTML = `${title}<span class="btn-note">${note}</span>`
+  return btn
+}
+
 function rematchActions(container: HTMLElement) {
   const sc = scenario!
   const champId = sc.units[sc.playerSlot]?.champId
-  const same = el('button', 'btn primary', 'Same champ, new fight')
-  same.addEventListener('click', () => {
+  const again = rematchBtn('primary', 'Again', 'Same champ, new fight')
+  again.addEventListener('click', () => {
     const seed = freshSeed()
     sc.mode === 'laning' ? startLaning(seed, undefined, champId) : startTeamfight(seed, undefined, champId)
   })
-  const exact = el('button', 'btn', 'Exact rematch')
-  exact.addEventListener('click', () =>
+  const rematch = rematchBtn('', 'Rematch', 'Everything same')
+  rematch.addEventListener('click', () =>
     sc.mode === 'laning' ? startLaning(sc.seed, sc) : startTeamfight(sc.seed, sc),
   )
-  const random = el('button', 'btn', 'Random champ')
-  random.addEventListener('click', () => {
+  const neu = rematchBtn('', 'New', 'Random champ, everything new')
+  neu.addEventListener('click', () => {
+    const pool = CHAMPIONS.filter((c) => c.id !== champId)
+    const next = pool[(Math.random() * pool.length) | 0] ?? CHAMPIONS[0]!
     const seed = freshSeed()
-    sc.mode === 'laning' ? startLaning(seed) : startTeamfight(seed)
+    sc.mode === 'laning' ? startLaning(seed, undefined, next.id) : startTeamfight(seed, undefined, next.id)
   })
-  container.append(same, exact, random)
+  container.append(again, rematch, neu)
 }
 
 /** Mid-fight death: rematch without waiting for team wipe. */

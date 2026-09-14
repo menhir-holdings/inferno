@@ -1000,6 +1000,21 @@ button.btn {
   padding: 0.7rem 0.85rem;
 }
 
+button.btn .btn-note {
+  display: block;
+  margin-top: 0.12rem;
+  font-family: var(--font-ui);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #5c4a3e;
+}
+
+button.btn.primary .btn-note {
+  color: #4a2418;
+}
+
 button.btn.primary {
   background: var(--heat);
   border-color: var(--heat);

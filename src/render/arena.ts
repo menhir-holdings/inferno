@@ -42,7 +42,14 @@ export class ArenaRenderer {
     this.bgLayer.clear()
     this.bgLayer.rect(0, 0, w, h)
     this.bgLayer.fill({ color: 0x161310 })
-    // MT-225: dropped decorative pit ellipses (vignette ovals, not a skills-range floor).
+    // Practice-tool range rings (AA ~125 melee / ~250–300 ranged). Replaced the old
+    // decorative pit ellipses — those were a vignette puddle, not a skills-range floor.
+    const cx = w * 0.5
+    const cy = h * 0.5
+    for (const r of [125, 250, 375, 500]) {
+      this.bgLayer.circle(cx, cy, r)
+      this.bgLayer.stroke({ width: 1, color: 0xc45c32, alpha: r === 250 ? 0.22 : 0.1 })
+    }
     for (let i = 0; i < 7; i++) {
       const y = 70 + i * ((h - 140) / 6)
       this.bgLayer.moveTo(28, y)
