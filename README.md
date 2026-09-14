@@ -7,8 +7,8 @@ Train the **OODA** loop — Observe, Orient, Decide, Act — under fight pressur
 ## Stack
 
 - Vite + TypeScript
-- PixiJS (WebGL)
-- Fixed-timestep simulation
+- Three.js perspective match view (FOV 40°, pitch 56°)
+- Fixed-timestep 2D ground sim (`tickWorld`)
 - Champion icons via Riot Data Dragon
 
 ## Run
