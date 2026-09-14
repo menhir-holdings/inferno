@@ -6,6 +6,8 @@ import type { GroundMark, Telegraph, Unit, World } from '../sim/types'
 
 export const MATCH_FOV = 40
 export const MATCH_PITCH_DEG = 56
+/** Vertical ground span the locked camera shows (sim units). Not the full pit. */
+export const MATCH_VIEW_DEPTH = 460
 
 const PITCH = THREE.MathUtils.degToRad(MATCH_PITCH_DEG)
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -133,6 +135,7 @@ interface UnitRig {
   root: THREE.Group
   body: THREE.Group
   face: THREE.Mesh
+  faceRig: THREE.Group
   hp: THREE.Sprite
   hpCanvas: HTMLCanvasElement
   hpCtx: CanvasRenderingContext2D
@@ -181,22 +184,29 @@ function makeStickman(teamColor: number, isPlayer: boolean): Omit<UnitRig, 'yaw'
     transparent: true,
     depthWrite: true,
   })
-  const face = new THREE.Mesh(new THREE.CircleGeometry(8.8, 28), faceMat)
-  face.position.set(0, 52, 9.6)
-  body.add(face)
+  const faceBack = new THREE.Mesh(
+    new THREE.CircleGeometry(15.2, 28),
+    new THREE.MeshBasicMaterial({ color: 0x140c08, depthWrite: true, side: THREE.DoubleSide }),
+  )
+  const face = new THREE.Mesh(new THREE.CircleGeometry(14.2, 28), faceMat)
+  face.position.z = 0.4
+  const faceRig = new THREE.Group()
+  faceRig.position.set(0, 58, 0)
+  faceRig.add(faceBack, face)
+  root.add(faceRig)
 
   const { canvas, tex, ctx } = makeHpTexture()
   const hp = new THREE.Sprite(
     new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }),
   )
-  hp.scale.set(36, 5.5, 1)
-  hp.position.y = 72
+  hp.scale.set(42, 6.5, 1)
+  hp.position.y = 86
   root.add(hp)
 
   const targetRing = makeRingDecal(UNIT_RADIUS + 6, COLORS.player, 0)
   root.add(targetRing)
 
-  return { root, body, face, hp, hpCanvas: canvas, hpCtx: ctx, hpTex: tex, targetRing, faceMat }
+  return { root, body, face, faceRig, hp, hpCanvas: canvas, hpCtx: ctx, hpTex: tex, targetRing, faceMat }
 }
 
 export class ArenaRenderer {
@@ -211,6 +221,8 @@ export class ArenaRenderer {
   private tmp = new THREE.Vector3()
   private tmpB = new THREE.Vector3()
   private arena = { w: 1100, h: 700 }
+  private aim = new THREE.Vector3()
+  private aimReady = false
   private ground = new THREE.Group()
   private decals = new THREE.Group()
   private fx = new THREE.Group()
@@ -246,9 +258,9 @@ export class ArenaRenderer {
     const hemi = new THREE.HemisphereLight(0xffe8d0, 0x2a1c14, 1.35)
     const key = new THREE.DirectionalLight(0xffe0c0, 1.45)
     key.position.set(arenaW * 0.35, 420, arenaH * 0.85)
-    const fill = new THREE.DirectionalLight(0x5ec8ff, 0.22)
+    const fill = new THREE.DirectionalLight(0x5ec8ff, 0.35)
     fill.position.set(-200, 180, -80)
-    this.scene.add(hemi, key, fill)
+    this.scene.add(new THREE.AmbientLight(0xfff4e8, 0.55), hemi, key, fill)
 
     this.ground = this.buildGround(arenaW, arenaH)
     this.scene.add(this.ground)
@@ -264,7 +276,7 @@ export class ArenaRenderer {
     const group = new THREE.Group()
     const dirt = new THREE.Mesh(
       new THREE.PlaneGeometry(w + 220, h + 220),
-      new THREE.MeshStandardMaterial({ color: 0x2a221c, roughness: 0.92, metalness: 0.02 }),
+      new THREE.MeshStandardMaterial({ color: 0x3d342c, roughness: 0.92, metalness: 0.02 }),
     )
     dirt.rotation.x = -Math.PI / 2
     dirt.position.set(w / 2, 0, h / 2)
@@ -272,17 +284,17 @@ export class ArenaRenderer {
 
     const pad = new THREE.Mesh(
       new THREE.PlaneGeometry(w, h),
-      new THREE.MeshStandardMaterial({ color: 0x3a3028, roughness: 0.88, metalness: 0.04 }),
+      new THREE.MeshStandardMaterial({ color: 0x4a4036, roughness: 0.88, metalness: 0.04 }),
     )
     pad.rotation.x = -Math.PI / 2
     pad.position.set(w / 2, 0.02, h / 2)
     group.add(pad)
 
-    const grid = new THREE.GridHelper(Math.max(w, h), Math.floor(Math.max(w, h) / 44), 0x3d342e, 0x3d342e)
+    const grid = new THREE.GridHelper(Math.max(w, h), Math.floor(Math.max(w, h) / 44), 0x6a5c4e, 0x5a4e42)
     grid.position.set(w / 2, 0.03, h / 2)
     const gridMat = grid.material as THREE.Material
     gridMat.transparent = true
-    gridMat.opacity = 0.22
+    gridMat.opacity = 0.42
     group.add(grid)
 
     const edge = new THREE.LineSegments(
@@ -304,19 +316,26 @@ export class ArenaRenderer {
     return group
   }
 
-  private frameCamera() {
-    const { w, h } = this.arena
-    const aspect = Math.max(this.camera.aspect, 1.05)
+  private cameraDist() {
     const halfFov = THREE.MathUtils.degToRad(MATCH_FOV / 2)
-    const vFit = ((h * 1.08) / 2 / Math.tan(halfFov)) / Math.sin(PITCH)
-    const hFit = (w * 1.08) / 2 / Math.tan(halfFov) / aspect
-    const dist = Math.max(vFit, hFit) * 1.02
-    const cx = w / 2
-    const cz = h / 2
+    return (MATCH_VIEW_DEPTH / 2 / Math.tan(halfFov)) / Math.sin(PITCH)
+  }
+
+  private frameCamera(x = this.arena.w / 2, z = this.arena.h / 2) {
+    const dist = this.cameraDist()
     this.camera.fov = MATCH_FOV
-    this.camera.position.set(cx, dist * Math.sin(PITCH), cz + dist * Math.cos(PITCH))
-    this.camera.lookAt(cx, 0, cz)
+    this.camera.position.set(x, dist * Math.sin(PITCH), z + dist * Math.cos(PITCH))
+    this.camera.lookAt(x, 0, z)
     this.camera.updateProjectionMatrix()
+  }
+
+  private frameOnFight(world: World) {
+    const p = world.units[world.playerId]
+    const tx = p?.pos.x ?? this.arena.w / 2
+    const tz = p?.pos.y ?? this.arena.h / 2
+    this.aim.set(tx, 0, tz)
+    this.aimReady = true
+    this.frameCamera(tx, tz)
   }
 
   resize() {
@@ -324,7 +343,9 @@ export class ArenaRenderer {
     const rh = Math.max(1, this.host.clientHeight)
     this.renderer.setSize(rw, rh, false)
     this.camera.aspect = rw / rh
-    this.frameCamera()
+    this.camera.updateProjectionMatrix()
+    if (this.aimReady) this.frameCamera(this.aim.x, this.aim.z)
+    else this.frameCamera()
   }
 
   attachResize() {
@@ -362,7 +383,8 @@ export class ArenaRenderer {
     this.scene.remove(this.ground)
     this.ground = this.buildGround(world.arena.w, world.arena.h)
     this.scene.add(this.ground)
-    this.frameCamera()
+    this.aimReady = false
+    this.frameOnFight(world)
 
     if (world.mode === 'laning') {
       const strip = new THREE.Mesh(
@@ -394,7 +416,8 @@ export class ArenaRenderer {
     const want = yawFromFacing(u.facing)
     view.yaw += shortestAngle(view.yaw, want) * 0.2
     view.body.rotation.y = view.yaw
-    view.root.scale.setScalar(u.alive ? 1 : 0.86)
+    view.faceRig.quaternion.copy(this.camera.quaternion)
+    view.root.scale.setScalar(u.alive ? 1.15 : 0.95)
     if (!u.alive) view.body.position.y = -6
     else view.body.position.y = u.hitFlashTtl > 0 ? 1.6 : 0
 
@@ -452,6 +475,7 @@ export class ArenaRenderer {
   }
 
   render(world: World, input: InputState) {
+    this.frameOnFight(world)
     const player = world.units[world.playerId]
     for (const u of world.units) {
       const v = this.views.get(u.id)
