@@ -229,11 +229,11 @@ export class ArenaRenderer {
   constructor(host: HTMLElement, arenaW: number, arenaH: number) {
     this.host = host
     this.arena = { w: arenaW, h: arenaH }
-    this.scene.background = hexColor(0x0c0a09)
-    this.scene.fog = new THREE.Fog(0x0c0a09, 900, 2800)
+    this.scene.background = hexColor(0x16110e)
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    this.renderer.setClearColor(0x16110e, 1)
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.shadowMap.enabled = false
     this.canvas = this.renderer.domElement
@@ -243,8 +243,8 @@ export class ArenaRenderer {
     this.canvas.style.height = '100%'
     host.appendChild(this.canvas)
 
-    const hemi = new THREE.HemisphereLight(0xffe0c0, 0x1a120e, 1.05)
-    const key = new THREE.DirectionalLight(0xffd2a8, 1.15)
+    const hemi = new THREE.HemisphereLight(0xffe8d0, 0x2a1c14, 1.35)
+    const key = new THREE.DirectionalLight(0xffe0c0, 1.45)
     key.position.set(arenaW * 0.35, 420, arenaH * 0.85)
     const fill = new THREE.DirectionalLight(0x5ec8ff, 0.22)
     fill.position.set(-200, 180, -80)
@@ -264,7 +264,7 @@ export class ArenaRenderer {
     const group = new THREE.Group()
     const dirt = new THREE.Mesh(
       new THREE.PlaneGeometry(w + 220, h + 220),
-      new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 0.92, metalness: 0.02 }),
+      new THREE.MeshStandardMaterial({ color: 0x2a221c, roughness: 0.92, metalness: 0.02 }),
     )
     dirt.rotation.x = -Math.PI / 2
     dirt.position.set(w / 2, 0, h / 2)
@@ -272,7 +272,7 @@ export class ArenaRenderer {
 
     const pad = new THREE.Mesh(
       new THREE.PlaneGeometry(w, h),
-      new THREE.MeshStandardMaterial({ color: 0x221c18, roughness: 0.88, metalness: 0.04 }),
+      new THREE.MeshStandardMaterial({ color: 0x3a3028, roughness: 0.88, metalness: 0.04 }),
     )
     pad.rotation.x = -Math.PI / 2
     pad.position.set(w / 2, 0.02, h / 2)
@@ -306,11 +306,11 @@ export class ArenaRenderer {
 
   private frameCamera() {
     const { w, h } = this.arena
-    const aspect = Math.max(0.2, this.camera.aspect)
+    const aspect = Math.max(this.camera.aspect, 1.05)
     const halfFov = THREE.MathUtils.degToRad(MATCH_FOV / 2)
-    const vFit = ((h * 1.12) / 2 / Math.tan(halfFov)) / Math.sin(PITCH)
-    const hFit = (w * 1.12) / 2 / Math.tan(halfFov) / aspect
-    const dist = Math.max(vFit, hFit) * 1.06
+    const vFit = ((h * 1.08) / 2 / Math.tan(halfFov)) / Math.sin(PITCH)
+    const hFit = (w * 1.08) / 2 / Math.tan(halfFov) / aspect
+    const dist = Math.max(vFit, hFit) * 1.02
     const cx = w / 2
     const cz = h / 2
     this.camera.fov = MATCH_FOV
