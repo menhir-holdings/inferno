@@ -8,6 +8,7 @@ import type { Unit, World } from '../sim/types'
 interface UnitView {
   root: Container
   ring: Graphics
+  outline: Graphics
   icon: Sprite | null
   iconMask: Graphics
   hpBg: Graphics
@@ -42,14 +43,8 @@ export class ArenaRenderer {
     this.bgLayer.clear()
     this.bgLayer.rect(0, 0, w, h)
     this.bgLayer.fill({ color: 0x161310 })
-    // Practice-tool range rings (AA ~125 melee / ~250–300 ranged). Replaced the old
-    // decorative pit ellipses — those were a vignette puddle, not a skills-range floor.
-    const cx = w * 0.5
-    const cy = h * 0.5
-    for (const r of [125, 250, 375, 500]) {
-      this.bgLayer.circle(cx, cy, r)
-      this.bgLayer.stroke({ width: 1, color: 0xc45c32, alpha: r === 250 ? 0.22 : 0.1 })
-    }
+    // Floor concentric range rings (125/250/375/500) removed — they stacked with
+    // champ chrome and read as leftover AA. Player AA is X-key `showRange` only.
     for (let i = 0; i < 7; i++) {
       const y = 70 + i * ((h - 140) / 6)
       this.bgLayer.moveTo(28, y)
@@ -98,6 +93,7 @@ export class ArenaRenderer {
     for (const u of world.units) {
       const root = new Container()
       const ring = new Graphics()
+      const outline = new Graphics()
       const iconMask = new Graphics()
       iconMask.circle(0, 0, ICON_RADIUS)
       iconMask.fill(0xffffff)
@@ -116,10 +112,6 @@ export class ArenaRenderer {
       name.anchor.set(0.5, 1)
       name.y = -UNIT_RADIUS - 10
       root.addChild(ring)
-      root.addChild(targetRing)
-      root.addChild(hpBg)
-      root.addChild(hpFg)
-      root.addChild(name)
       this.worldLayer.addChild(root)
 
       const tex = await this.ensureIcon(u.champId)
@@ -131,18 +123,37 @@ export class ArenaRenderer {
         root.addChild(icon)
         root.addChild(iconMask)
       }
-      this.views.set(u.id, { root, ring, icon, iconMask, hpBg, hpFg, name, targetRing })
+      root.addChild(outline)
+      root.addChild(targetRing)
+      root.addChild(hpBg)
+      root.addChild(hpFg)
+      root.addChild(name)
+      this.views.set(u.id, { root, ring, outline, icon, iconMask, hpBg, hpFg, name, targetRing })
     }
   }
 
   drawUnit(u: Unit, view: UnitView, world: World) {
     const player = world.units[world.playerId]
     const playerTargetId = player?.targetId ?? null
-    view.root.visible = u.alive || u.hp > 0
-    view.root.alpha = u.alive ? 1 : 0.2
     view.root.x = u.pos.x
     view.root.y = u.pos.y
     view.root.zIndex = u.pos.y
+
+    if (!u.alive) {
+      view.root.visible = false
+      view.root.alpha = 0
+      view.ring.clear()
+      view.outline.clear()
+      view.targetRing.clear()
+      view.hpBg.clear()
+      view.hpFg.clear()
+      if (view.icon) view.icon.visible = false
+      return
+    }
+
+    view.root.visible = true
+    view.root.alpha = 1
+    if (view.icon) view.icon.visible = true
 
     const teamColor = u.team === 'blue' ? COLORS.ally : COLORS.foe
     const stroke = u.isPlayer ? COLORS.player : teamColor
@@ -151,24 +162,30 @@ export class ArenaRenderer {
     view.ring.clear()
     view.ring.ellipse(2, UNIT_RADIUS * 0.62, UNIT_RADIUS * 0.85, UNIT_RADIUS * 0.32)
     view.ring.fill({ color: 0x000000, alpha: 0.35 })
-    if (u.stats.hamperRadius > 0) {
+    // Auras: player only, while those radii exist, faint. Never on every champ.
+    if (u.isPlayer && u.stats.hamperRadius > 0) {
       view.ring.circle(0, 0, u.stats.hamperRadius)
-      view.ring.stroke({ width: 1, color: COLORS.hamper, alpha: 0.18 })
+      view.ring.stroke({ width: 1, color: COLORS.hamper, alpha: 0.08 })
     }
-    if (u.stats.buffRadius > 0) {
+    if (u.isPlayer && u.stats.buffRadius > 0) {
       view.ring.circle(0, 0, u.stats.buffRadius)
-      view.ring.stroke({ width: 1, color: COLORS.buff, alpha: 0.16 })
+      view.ring.stroke({ width: 1, color: COLORS.buff, alpha: 0.07 })
     }
-    view.ring.circle(0, 0, UNIT_RADIUS)
-    view.ring.fill({ color: teamColor, alpha: flash ? 0.95 : 0.55 })
-    view.ring.circle(0, 0, UNIT_RADIUS)
-    view.ring.stroke({
-      width: u.isPlayer ? 3 : 2,
+
+    view.outline.clear()
+    if (!view.icon) {
+      view.outline.circle(0, 0, UNIT_RADIUS)
+      view.outline.fill({ color: 0x1a1612, alpha: 0.95 })
+    }
+    view.outline.circle(0, 0, UNIT_RADIUS)
+    view.outline.stroke({
+      width: u.isPlayer ? 2.5 : 2,
       color: flash ? 0xffffff : stroke,
       alpha: 1,
     })
     if (view.icon) {
       view.icon.rotation = u.facing * 0.12
+      view.icon.tint = flash ? 0xffe8dc : 0xffffff
     }
 
     view.targetRing.clear()
@@ -328,6 +345,7 @@ export class ArenaRenderer {
     }
 
     this.rangeRing.clear()
+    this.rangeRing.visible = Boolean(input.showRange && player?.alive)
     if (input.showRange && player?.alive) {
       this.rangeRing.circle(player.pos.x, player.pos.y, player.stats.aaRange)
       this.rangeRing.stroke({ width: 1.5, color: COLORS.player, alpha: 0.75 })

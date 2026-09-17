@@ -1,8 +1,8 @@
 /** Visual + physics radius for champ blobs */
 export const UNIT_RADIUS = 28
 export const UNIT_DIAMETER = UNIT_RADIUS * 2
-/** Inner circle for icon fill (inside ring stroke) */
-export const ICON_RADIUS = 24
+/** Portrait fills the body disk — same radius, circular-masked, not a halo around it. */
+export const ICON_RADIUS = UNIT_RADIUS
 
 /** Ward cast range (arena units). Must feel finite vs map size. */
 export const WARD_CAST_RANGE = 240
