@@ -1,9 +1,10 @@
 import { Application, Container, Graphics, Sprite, Text, TextStyle, Assets, Texture } from 'pixi.js'
 import { champIconUrl } from '../sim/champions'
-import { COLORS, ICON_RADIUS, UNIT_RADIUS } from '../sim/constants'
+import { COLORS, ICON_RADIUS, UNIT_RADIUS, VISION_PENUMBRA, VISION_RADIUS } from '../sim/constants'
 import type { InputState } from '../input/controller'
 import { drawLaneOverlay } from '../sim/laning'
-import type { Unit, World } from '../sim/types'
+import type { Unit, Vec2, World } from '../sim/types'
+import { allyVisionSources, fxRevealed, inAllyVision, unitRevealed } from '../sim/vision'
 
 interface UnitView {
   root: Container
@@ -24,13 +25,15 @@ export class ArenaRenderer {
   bgLayer = new Graphics()
   views = new Map<number, UnitView>()
   rangeRing = new Graphics()
+  fogSoft = new Graphics()
+  fogCore = new Graphics()
   private iconCache = new Map<string, Texture>()
 
   constructor(app: Application) {
     this.app = app
     app.stage.eventMode = 'none'
     app.stage.interactiveChildren = false
-    for (const layer of [this.bgLayer, this.worldLayer, this.fxLayer, this.rangeRing]) {
+    for (const layer of [this.bgLayer, this.worldLayer, this.fxLayer, this.rangeRing, this.fogSoft, this.fogCore]) {
       layer.eventMode = 'none'
     }
     app.stage.addChild(this.bgLayer)
@@ -151,6 +154,19 @@ export class ArenaRenderer {
       return
     }
 
+    if (!unitRevealed(world, u)) {
+      // Fog: enemies outside shared ally vision are gone, not silhouettes.
+      view.root.visible = false
+      view.root.alpha = 0
+      view.ring.clear()
+      view.outline.clear()
+      view.targetRing.clear()
+      view.hpBg.clear()
+      view.hpFg.clear()
+      if (view.icon) view.icon.visible = false
+      return
+    }
+
     view.root.visible = true
     view.root.alpha = 1
     if (view.icon) view.icon.visible = true
@@ -226,11 +242,11 @@ export class ArenaRenderer {
     }
 
     this.fxLayer.removeChildren()
-    this.fxLayer.addChild(this.rangeRing)
     this.app.stage.x = 0
     this.app.stage.y = 0
 
     for (const t of world.telegraphs) {
+      if (!fxRevealed(world, t.to, t.team) && !fxRevealed(world, t.from, t.team)) continue
       const g = new Graphics()
       const pulse = 0.35 + (1 - t.ttl / t.maxTtl) * 0.5
       const color = t.team === 'blue' ? COLORS.ally : COLORS.foe
@@ -272,6 +288,7 @@ export class ArenaRenderer {
     }
 
     for (const p of world.projectiles) {
+      if (!fxRevealed(world, p.pos, p.team)) continue
       const g = new Graphics()
       const isUlt = p.kind === 'ultimate'
       const isAbility = p.kind === 'ability' || isUlt
@@ -294,6 +311,8 @@ export class ArenaRenderer {
     }
 
     for (const s of world.swipes) {
+      const mid = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 }
+      if (!inAllyVision(world, mid)) continue
       const g = new Graphics()
       const alpha = Math.min(1, s.ttl * 6)
       g.moveTo(s.x1, s.y1)
@@ -302,6 +321,7 @@ export class ArenaRenderer {
       this.fxLayer.addChild(g)
     }
     for (const w of world.wards) {
+      if (!fxRevealed(world, w.pos, w.team)) continue
       const g = new Graphics()
       g.circle(w.pos.x, w.pos.y, 7)
       g.fill({ color: w.team === 'blue' ? COLORS.ally : COLORS.foe, alpha: 0.55 })
@@ -312,6 +332,7 @@ export class ArenaRenderer {
 
     for (const m of world.minions) {
       if (!m.alive) continue
+      if (!fxRevealed(world, m.pos, m.team)) continue
       const g = new Graphics()
       const color = m.team === 'blue' ? COLORS.ally : COLORS.foe
       g.ellipse(m.pos.x + 1, m.pos.y + 6, 11, 5)
@@ -328,6 +349,7 @@ export class ArenaRenderer {
     }
 
     for (const f of world.floaters) {
+      if (!inAllyVision(world, { x: f.x, y: f.y })) continue
       const g = new Text({
         text: f.text,
         style: new TextStyle({
@@ -344,6 +366,8 @@ export class ArenaRenderer {
       this.fxLayer.addChild(g)
     }
 
+    this.drawFog(world)
+
     this.rangeRing.clear()
     this.rangeRing.visible = Boolean(input.showRange && player?.alive)
     if (input.showRange && player?.alive) {
@@ -352,10 +376,32 @@ export class ArenaRenderer {
       this.rangeRing.circle(player.pos.x, player.pos.y, player.stats.aaRange)
       this.rangeRing.fill({ color: COLORS.player, alpha: 0.04 })
     }
+    this.fxLayer.addChild(this.rangeRing)
+  }
+
+  /** Dark overlay with circular holes around living allies. Oversized so edge cuts still punch. */
+  drawFog(world: World) {
+    const sources = allyVisionSources(world)
+    const { w, h } = world.arena
+    punchFog(this.fogSoft, w, h, sources, VISION_RADIUS + VISION_PENUMBRA, 0.46)
+    punchFog(this.fogCore, w, h, sources, VISION_RADIUS, 0.58)
+    this.fxLayer.addChild(this.fogSoft)
+    this.fxLayer.addChild(this.fogCore)
   }
 
   destroy() {
     this.app.destroy(true)
+  }
+}
+
+function punchFog(g: Graphics, w: number, h: number, sources: Vec2[], radius: number, alpha: number) {
+  const pad = VISION_RADIUS + VISION_PENUMBRA + 8
+  g.clear()
+  g.rect(-pad, -pad, w + pad * 2, h + pad * 2)
+  g.fill({ color: COLORS.fog, alpha })
+  for (const s of sources) {
+    g.circle(s.x, s.y, radius)
+    g.cut()
   }
 }
 

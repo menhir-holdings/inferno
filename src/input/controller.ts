@@ -1,6 +1,7 @@
 import { actionForCode, loadBindings, type Bindings } from './bindings'
 import { addGroundMark, castAbility, issueAttackMove, queueWard, useActive } from '../sim/world'
 import { inAaRange, unitAt } from '../sim/combat'
+import { unitRevealed } from '../sim/vision'
 import type { InputFrame, World } from '../sim/types'
 
 export type TargetingMode = 'none' | 'attackMoveRange'
@@ -141,7 +142,7 @@ export function attachInput(
     cancelTargeting(state)
 
     const enemy = unitAt(world, pos, 52, player.team === 'blue' ? 'red' : 'blue')
-    if (enemy) {
+    if (enemy && unitRevealed(world, enemy)) {
       player.targetId = enemy.id
       player.attackMoveTo = null
       player.pendingWard = null

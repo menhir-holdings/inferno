@@ -17,11 +17,16 @@ import {
 } from './combat'
 import type { AbilitySlot, Telegraph, Unit, Vec2, World } from './types'
 import { tickLaning } from './laning'
+import { unitRevealed } from './vision'
 
 const DT = 1 / 60
 
 function enemiesInAaRange(world: World, u: Unit): Unit[] {
-  return enemiesOf(world, u).filter((o) => dist(u.pos, o.pos) <= u.stats.aaRange)
+  return enemiesOf(world, u).filter((o) => {
+    if (dist(u.pos, o.pos) > u.stats.aaRange) return false
+    if (u.isPlayer && !unitRevealed(world, o)) return false
+    return true
+  })
 }
 
 /** Among units currently in AA range, pick the one closest to aim point. */
@@ -101,6 +106,7 @@ function tryAutoAttack(world: World, u: Unit) {
     u.targetId = null
     return
   }
+  if (u.isPlayer && !unitRevealed(world, target)) return
   const stop = attackStopDist(u)
   const d = dist(u.pos, target.pos)
 
@@ -594,7 +600,7 @@ export function tickWorld(world: World) {
       }
     } else if (u.isPlayer && u.targetId != null && !u.pendingWard) {
       const target = world.units[u.targetId]
-      if (target?.alive && target.id === u.targetId) {
+      if (target?.alive && unitRevealed(world, target)) {
         if (!u.stats.melee && inAaRange(u, target)) {
           u.moveTo = null
         } else {
