@@ -1,13 +1,15 @@
 import { Application, Container, Graphics, Sprite, Text, TextStyle, Assets, Texture } from 'pixi.js'
 import { champIconUrl } from '../sim/champions'
-import { COLORS, ICON_RADIUS, UNIT_RADIUS } from '../sim/constants'
+import { COLORS, ICON_RADIUS, UNIT_RADIUS, VISION_PENUMBRA, VISION_RADIUS } from '../sim/constants'
 import type { InputState } from '../input/controller'
 import { drawLaneOverlay } from '../sim/laning'
-import type { Unit, World } from '../sim/types'
+import type { Unit, Vec2, World } from '../sim/types'
+import { allyVisionSources, fxRevealed, inAllyVision, unitRevealed } from '../sim/vision'
 
 interface UnitView {
   root: Container
   ring: Graphics
+  outline: Graphics
   icon: Sprite | null
   iconMask: Graphics
   hpBg: Graphics
@@ -23,13 +25,15 @@ export class ArenaRenderer {
   bgLayer = new Graphics()
   views = new Map<number, UnitView>()
   rangeRing = new Graphics()
+  fogSoft = new Graphics()
+  fogCore = new Graphics()
   private iconCache = new Map<string, Texture>()
 
   constructor(app: Application) {
     this.app = app
     app.stage.eventMode = 'none'
     app.stage.interactiveChildren = false
-    for (const layer of [this.bgLayer, this.worldLayer, this.fxLayer, this.rangeRing]) {
+    for (const layer of [this.bgLayer, this.worldLayer, this.fxLayer, this.rangeRing, this.fogSoft, this.fogCore]) {
       layer.eventMode = 'none'
     }
     app.stage.addChild(this.bgLayer)
@@ -41,26 +45,28 @@ export class ArenaRenderer {
   drawArena(w: number, h: number, mode: World['mode'] = 'teamfight') {
     this.bgLayer.clear()
     this.bgLayer.rect(0, 0, w, h)
-    this.bgLayer.fill({ color: COLORS.arena })
-    const step = 44
-    for (let x = 0; x <= w; x += step) {
-      this.bgLayer.moveTo(x, 0)
-      this.bgLayer.lineTo(x, h)
+    this.bgLayer.fill({ color: 0x161310 })
+    // Floor concentric range rings (125/250/375/500) removed — they stacked with
+    // champ chrome and read as leftover AA. Player AA is X-key `showRange` only.
+    for (let i = 0; i < 7; i++) {
+      const y = 70 + i * ((h - 140) / 6)
+      this.bgLayer.moveTo(28, y)
+      this.bgLayer.lineTo(52, y)
+      this.bgLayer.moveTo(w - 52, y)
+      this.bgLayer.lineTo(w - 28, y)
     }
-    for (let y = 0; y <= h; y += step) {
-      this.bgLayer.moveTo(0, y)
-      this.bgLayer.lineTo(w, y)
-    }
-    this.bgLayer.stroke({ width: 1, color: COLORS.grid, alpha: 0.35 })
-    this.bgLayer.rect(8, 8, w - 16, h - 16)
-    this.bgLayer.stroke({ width: 2, color: COLORS.grid, alpha: 0.85 })
+    this.bgLayer.stroke({ width: 1, color: 0x3d342e, alpha: 0.55 })
+    this.bgLayer.rect(10, 10, w - 20, h - 20)
+    this.bgLayer.stroke({ width: 2, color: 0x3d342e, alpha: 0.9 })
     if (mode === 'laning') {
       drawLaneOverlay(w, h, this.bgLayer)
     } else {
       const mid = w / 2
-      this.bgLayer.moveTo(mid, 12)
-      this.bgLayer.lineTo(mid, h - 12)
-      this.bgLayer.stroke({ width: 1, color: 0xc45c32, alpha: 0.22 })
+      this.bgLayer.moveTo(mid, 28)
+      this.bgLayer.lineTo(mid, h - 28)
+      this.bgLayer.stroke({ width: 2, color: 0xc45c32, alpha: 0.18 })
+      this.bgLayer.circle(mid, h * 0.5, 90)
+      this.bgLayer.stroke({ width: 1, color: 0xe8b86d, alpha: 0.12 })
     }
   }
 
@@ -90,6 +96,7 @@ export class ArenaRenderer {
     for (const u of world.units) {
       const root = new Container()
       const ring = new Graphics()
+      const outline = new Graphics()
       const iconMask = new Graphics()
       iconMask.circle(0, 0, ICON_RADIUS)
       iconMask.fill(0xffffff)
@@ -108,10 +115,6 @@ export class ArenaRenderer {
       name.anchor.set(0.5, 1)
       name.y = -UNIT_RADIUS - 10
       root.addChild(ring)
-      root.addChild(targetRing)
-      root.addChild(hpBg)
-      root.addChild(hpFg)
-      root.addChild(name)
       this.worldLayer.addChild(root)
 
       const tex = await this.ensureIcon(u.champId)
@@ -123,32 +126,83 @@ export class ArenaRenderer {
         root.addChild(icon)
         root.addChild(iconMask)
       }
-      this.views.set(u.id, { root, ring, icon, iconMask, hpBg, hpFg, name, targetRing })
+      root.addChild(outline)
+      root.addChild(targetRing)
+      root.addChild(hpBg)
+      root.addChild(hpFg)
+      root.addChild(name)
+      this.views.set(u.id, { root, ring, outline, icon, iconMask, hpBg, hpFg, name, targetRing })
     }
   }
 
   drawUnit(u: Unit, view: UnitView, world: World) {
     const player = world.units[world.playerId]
     const playerTargetId = player?.targetId ?? null
-    view.root.visible = u.alive || u.hp > 0
-    view.root.alpha = u.alive ? 1 : 0.2
     view.root.x = u.pos.x
     view.root.y = u.pos.y
     view.root.zIndex = u.pos.y
+
+    if (!u.alive) {
+      view.root.visible = false
+      view.root.alpha = 0
+      view.ring.clear()
+      view.outline.clear()
+      view.targetRing.clear()
+      view.hpBg.clear()
+      view.hpFg.clear()
+      if (view.icon) view.icon.visible = false
+      return
+    }
+
+    if (!unitRevealed(world, u)) {
+      // Fog: enemies outside shared ally vision are gone, not silhouettes.
+      view.root.visible = false
+      view.root.alpha = 0
+      view.ring.clear()
+      view.outline.clear()
+      view.targetRing.clear()
+      view.hpBg.clear()
+      view.hpFg.clear()
+      if (view.icon) view.icon.visible = false
+      return
+    }
+
+    view.root.visible = true
+    view.root.alpha = 1
+    if (view.icon) view.icon.visible = true
 
     const teamColor = u.team === 'blue' ? COLORS.ally : COLORS.foe
     const stroke = u.isPlayer ? COLORS.player : teamColor
     const flash = u.hitFlashTtl > 0
 
     view.ring.clear()
-    view.ring.circle(0, 0, UNIT_RADIUS)
-    view.ring.fill({ color: teamColor, alpha: flash ? 0.95 : 0.88 })
-    view.ring.circle(0, 0, UNIT_RADIUS)
-    view.ring.stroke({
-      width: u.isPlayer ? 3 : 2,
+    view.ring.ellipse(2, UNIT_RADIUS * 0.62, UNIT_RADIUS * 0.85, UNIT_RADIUS * 0.32)
+    view.ring.fill({ color: 0x000000, alpha: 0.35 })
+    // Auras: player only, while those radii exist, faint. Never on every champ.
+    if (u.isPlayer && u.stats.hamperRadius > 0) {
+      view.ring.circle(0, 0, u.stats.hamperRadius)
+      view.ring.stroke({ width: 1, color: COLORS.hamper, alpha: 0.08 })
+    }
+    if (u.isPlayer && u.stats.buffRadius > 0) {
+      view.ring.circle(0, 0, u.stats.buffRadius)
+      view.ring.stroke({ width: 1, color: COLORS.buff, alpha: 0.07 })
+    }
+
+    view.outline.clear()
+    if (!view.icon) {
+      view.outline.circle(0, 0, UNIT_RADIUS)
+      view.outline.fill({ color: 0x1a1612, alpha: 0.95 })
+    }
+    view.outline.circle(0, 0, UNIT_RADIUS)
+    view.outline.stroke({
+      width: u.isPlayer ? 2.5 : 2,
       color: flash ? 0xffffff : stroke,
       alpha: 1,
     })
+    if (view.icon) {
+      view.icon.rotation = u.facing * 0.12
+      view.icon.tint = flash ? 0xffe8dc : 0xffffff
+    }
 
     view.targetRing.clear()
     if (player?.alive && playerTargetId === u.id && u.alive) {
@@ -188,9 +242,53 @@ export class ArenaRenderer {
     }
 
     this.fxLayer.removeChildren()
-    this.fxLayer.addChild(this.rangeRing)
+    this.app.stage.x = 0
+    this.app.stage.y = 0
+
+    for (const t of world.telegraphs) {
+      if (!fxRevealed(world, t.to, t.team) && !fxRevealed(world, t.from, t.team)) continue
+      const g = new Graphics()
+      const pulse = 0.35 + (1 - t.ttl / t.maxTtl) * 0.5
+      const color = t.team === 'blue' ? COLORS.ally : COLORS.foe
+      if (t.kind === 'circle') {
+        g.circle(t.to.x, t.to.y, t.radius)
+        g.fill({ color, alpha: 0.12 + pulse * 0.12 })
+        g.circle(t.to.x, t.to.y, t.radius)
+        g.stroke({ width: 2, color, alpha: 0.55 + pulse * 0.3 })
+      } else {
+        const dx = t.to.x - t.from.x
+        const dy = t.to.y - t.from.y
+        const len = Math.hypot(dx, dy) || 1
+        const nx = -dy / len
+        const ny = dx / len
+        const hw = t.radius
+        g.moveTo(t.from.x + nx * hw, t.from.y + ny * hw)
+        g.lineTo(t.to.x + nx * hw, t.to.y + ny * hw)
+        g.lineTo(t.to.x - nx * hw, t.to.y - ny * hw)
+        g.lineTo(t.from.x - nx * hw, t.from.y - ny * hw)
+        g.closePath()
+        g.fill({ color, alpha: 0.14 + pulse * 0.1 })
+        g.stroke({ width: 2, color, alpha: 0.7 })
+      }
+      this.fxLayer.addChild(g)
+    }
+
+    for (const m of world.marks) {
+      const g = new Graphics()
+      const a = Math.min(1, m.ttl * 2)
+      const col = m.kind === 'amove' ? COLORS.player : m.kind === 'ward' ? COLORS.buff : 0xe8ddd3
+      g.circle(m.x, m.y, 10)
+      g.stroke({ width: 2, color: col, alpha: a })
+      g.moveTo(m.x - 6, m.y)
+      g.lineTo(m.x + 6, m.y)
+      g.moveTo(m.x, m.y - 6)
+      g.lineTo(m.x, m.y + 6)
+      g.stroke({ width: 1.5, color: col, alpha: a })
+      this.fxLayer.addChild(g)
+    }
 
     for (const p of world.projectiles) {
+      if (!fxRevealed(world, p.pos, p.team)) continue
       const g = new Graphics()
       const isUlt = p.kind === 'ultimate'
       const isAbility = p.kind === 'ability' || isUlt
@@ -213,6 +311,8 @@ export class ArenaRenderer {
     }
 
     for (const s of world.swipes) {
+      const mid = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 }
+      if (!inAllyVision(world, mid)) continue
       const g = new Graphics()
       const alpha = Math.min(1, s.ttl * 6)
       g.moveTo(s.x1, s.y1)
@@ -221,6 +321,7 @@ export class ArenaRenderer {
       this.fxLayer.addChild(g)
     }
     for (const w of world.wards) {
+      if (!fxRevealed(world, w.pos, w.team)) continue
       const g = new Graphics()
       g.circle(w.pos.x, w.pos.y, 7)
       g.fill({ color: w.team === 'blue' ? COLORS.ally : COLORS.foe, alpha: 0.55 })
@@ -231,16 +332,24 @@ export class ArenaRenderer {
 
     for (const m of world.minions) {
       if (!m.alive) continue
+      if (!fxRevealed(world, m.pos, m.team)) continue
       const g = new Graphics()
       const color = m.team === 'blue' ? COLORS.ally : COLORS.foe
-      g.circle(m.pos.x, m.pos.y, 14)
-      g.fill({ color, alpha: 0.75 })
-      g.rect(m.pos.x - 16, m.pos.y - 22, 32 * (m.hp / m.maxHp), 3)
-      g.fill({ color: COLORS.hpHigh, alpha: 0.9 })
+      g.ellipse(m.pos.x + 1, m.pos.y + 6, 11, 5)
+      g.fill({ color: 0x000000, alpha: 0.3 })
+      g.circle(m.pos.x, m.pos.y, 11)
+      g.fill({ color, alpha: 0.82 })
+      g.circle(m.pos.x, m.pos.y, 11)
+      g.stroke({ width: 1.5, color: 0x140c08, alpha: 0.7 })
+      g.rect(m.pos.x - 14, m.pos.y - 20, 28, 3)
+      g.fill({ color: 0x0a0c08, alpha: 0.85 })
+      g.rect(m.pos.x - 14, m.pos.y - 20, 28 * (m.hp / m.maxHp), 3)
+      g.fill({ color: world.lastHitMinionId === m.id ? COLORS.player : COLORS.hpHigh, alpha: 0.95 })
       this.fxLayer.addChild(g)
     }
 
     for (const f of world.floaters) {
+      if (!inAllyVision(world, { x: f.x, y: f.y })) continue
       const g = new Text({
         text: f.text,
         style: new TextStyle({
@@ -257,17 +366,42 @@ export class ArenaRenderer {
       this.fxLayer.addChild(g)
     }
 
+    this.drawFog(world)
+
     this.rangeRing.clear()
+    this.rangeRing.visible = Boolean(input.showRange && player?.alive)
     if (input.showRange && player?.alive) {
       this.rangeRing.circle(player.pos.x, player.pos.y, player.stats.aaRange)
       this.rangeRing.stroke({ width: 1.5, color: COLORS.player, alpha: 0.75 })
       this.rangeRing.circle(player.pos.x, player.pos.y, player.stats.aaRange)
       this.rangeRing.fill({ color: COLORS.player, alpha: 0.04 })
     }
+    this.fxLayer.addChild(this.rangeRing)
+  }
+
+  /** Dark overlay with circular holes around living allies. Oversized so edge cuts still punch. */
+  drawFog(world: World) {
+    const sources = allyVisionSources(world)
+    const { w, h } = world.arena
+    punchFog(this.fogSoft, w, h, sources, VISION_RADIUS + VISION_PENUMBRA, 0.46)
+    punchFog(this.fogCore, w, h, sources, VISION_RADIUS, 0.58)
+    this.fxLayer.addChild(this.fogSoft)
+    this.fxLayer.addChild(this.fogCore)
   }
 
   destroy() {
     this.app.destroy(true)
+  }
+}
+
+function punchFog(g: Graphics, w: number, h: number, sources: Vec2[], radius: number, alpha: number) {
+  const pad = VISION_RADIUS + VISION_PENUMBRA + 8
+  g.clear()
+  g.rect(-pad, -pad, w + pad * 2, h + pad * 2)
+  g.fill({ color: COLORS.fog, alpha })
+  for (const s of sources) {
+    g.circle(s.x, s.y, radius)
+    g.cut()
   }
 }
 

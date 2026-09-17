@@ -1,7 +1,7 @@
 import { CHAMPIONS } from '../sim/champions'
 import { createRng } from '../sim/rng'
 import type { ActiveKind, Archetype, Scenario, ScenarioUnit } from '../sim/types'
-import { makeItems, scenarioToWorld } from './generate'
+import { champById, makeItems, scenarioToWorld, type GenerateOpts } from './generate'
 
 export { scenarioToWorld }
 
@@ -14,12 +14,14 @@ function pickChamp(rng: ReturnType<typeof createRng>, arch: Archetype, used: Set
   return champ
 }
 
-export function generateLaningScenario(seed: number, durationSec = 90): Scenario {
+export function generateLaningScenario(seed: number, durationSec = 90, opts?: GenerateOpts): Scenario {
   const rng = createRng(seed)
   const used = new Set<string>()
-  const playerArch = rng.pick(['brawler', 'assassin', 'mage', 'ranger'] as const)
+  const locked = opts?.playerChampId ? champById(opts.playerChampId) : null
+  const playerArch = locked?.archetype ?? rng.pick(['brawler', 'assassin', 'mage', 'ranger'] as const)
   const foeArch = rng.pick(['brawler', 'assassin', 'mage', 'ranger', 'tank'] as const)
-  const playerChamp = pickChamp(rng, playerArch, used)
+  const playerChamp = locked ?? pickChamp(rng, playerArch, used)
+  if (locked) used.add(locked.id)
   const foeChamp = pickChamp(rng, foeArch, used)
 
   const playerPower = rng.int(4, 8)
