@@ -29,24 +29,25 @@ export function resolveUnitCollisions(world: World, iterations = 5) {
         const dx = b.pos.x - a.pos.x
         const dy = b.pos.y - a.pos.y
         let d = Math.hypot(dx, dy)
+        const minDist = a.radius + b.radius
         if (d < 0.001) {
           const jitter = (a.id - b.id) * 0.31
           a.pos.x -= Math.cos(jitter) * 2
           a.pos.y -= Math.sin(jitter) * 2
           b.pos.x += Math.cos(jitter) * 2
           b.pos.y += Math.sin(jitter) * 2
-          d = UNIT_DIAMETER - 1
+          d = minDist - 1
         }
-        if (d < UNIT_DIAMETER) {
+        if (d < minDist) {
           const nx = dx / d
           const ny = dy / d
-          const push = (UNIT_DIAMETER - d) * 0.5
+          const push = (minDist - d) * 0.5
           a.pos.x -= nx * push
           a.pos.y -= ny * push
           b.pos.x += nx * push
           b.pos.y += ny * push
-          a.pos = clampToArena(a.pos, world.arena, UNIT_RADIUS)
-          b.pos = clampToArena(b.pos, world.arena, UNIT_RADIUS)
+          a.pos = clampToArena(a.pos, world.arena, a.radius)
+          b.pos = clampToArena(b.pos, world.arena, b.radius)
         }
       }
     }

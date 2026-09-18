@@ -1,7 +1,8 @@
 import { statsFor } from '../sim/archetypes'
 import { CHAMPIONS, PASSIVE_ITEMS } from '../sim/champions'
 import { separatePositions } from '../sim/collision'
-import { UNIT_DIAMETER } from '../sim/constants'
+import { UNIT_DIAMETER, UNIT_RADIUS } from '../sim/constants'
+import { champScale } from '../sim/gameplay-radius'
 import { createRng } from '../sim/rng'
 import type {
   AbilitySlot,
@@ -212,6 +213,7 @@ export function scenarioToWorld(scenario: Scenario): World {
       items: su.items,
       actives: makeActives(su.activeKinds),
       pos: { ...su.startPos },
+      radius: UNIT_RADIUS * champScale(su.champId),
       hp: stats.maxHp,
       stats,
       abilities: makeAbilities(rng),

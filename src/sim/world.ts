@@ -88,7 +88,7 @@ function stepMove(world: World, u: Unit, dest: { x: number; y: number }, stopDis
   u.pos = clampToArena(
     { x: u.pos.x + n.x * travel, y: u.pos.y + n.y * travel },
     world.arena,
-    UNIT_RADIUS,
+    u.radius,
   )
   return dist(u.pos, dest) <= stopDist + 1.5
 }
@@ -124,8 +124,8 @@ function tryAutoAttack(world: World, u: Unit) {
       fromId: u.id,
       toId: target.id,
       pos: {
-        x: u.pos.x + n.x * (UNIT_RADIUS * 0.45),
-        y: u.pos.y + n.y * (UNIT_RADIUS * 0.45),
+        x: u.pos.x + n.x * (u.radius * 0.45),
+        y: u.pos.y + n.y * (u.radius * 0.45),
       },
       vel: { x: n.x * speed, y: n.y * speed },
       damage: dmg,
@@ -160,7 +160,7 @@ function tickProjectiles(world: World) {
     let hit = false
     if (p.toId != null) {
       const t = world.units[p.toId]
-      if (t && t.alive && dist(p.pos, t.pos) < UNIT_RADIUS) {
+      if (t && t.alive && dist(p.pos, t.pos) < t.radius) {
         const atk = world.units[p.fromId]
         if (atk) dealDamage(world, atk, t, p.damage, t.archetype !== 'tank')
         hit = true
@@ -168,7 +168,7 @@ function tickProjectiles(world: World) {
     } else {
       for (const t of world.units) {
         if (!t.alive || t.team === p.team) continue
-        if (dist(p.pos, t.pos) < p.radius + UNIT_RADIUS * 0.7) {
+        if (dist(p.pos, t.pos) < p.radius + t.radius * 0.7) {
           const atk = world.units[p.fromId]
           if (atk) {
             dealDamage(world, atk, t, p.damage, true)
@@ -244,7 +244,7 @@ export function castAbility(
   const dmg = abilityDamage(u, slot)
   const target =
     aim != null
-      ? world.units.find((o) => o.alive && o.team !== u.team && dist(o.pos, aim) < UNIT_RADIUS + 8) ??
+      ? world.units.find((o) => o.alive && o.team !== u.team && dist(o.pos, aim) < o.radius + 8) ??
         nearestEnemy(world, u)
       : nearestEnemy(world, u)
   if (!target) return false
@@ -304,7 +304,7 @@ function releaseCast(world: World, t: Telegraph) {
       const target = nearestEnemy(world, u)
       if (target) {
         u.pos = approachPoint(target.pos, u.pos, UNIT_DIAMETER)
-        u.pos = clampToArena(u.pos, world.arena, UNIT_RADIUS)
+        u.pos = clampToArena(u.pos, world.arena, u.radius)
       }
     }
   } else {
@@ -501,7 +501,7 @@ function aiTick(world: World, u: Unit) {
       u.moveTo = clampToArena(
         { x: u.pos.x + n.x * 90 + offset.x * 0.2, y: u.pos.y + n.y * 90 + offset.y * 0.2 },
         world.arena,
-        UNIT_RADIUS,
+        u.radius,
       )
     } else if (d > sweet) {
       u.moveTo = approachPoint(u.pos, focus.pos, sweet)

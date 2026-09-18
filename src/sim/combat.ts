@@ -1,4 +1,4 @@
-import { UNIT_DIAMETER, UNIT_RADIUS } from './constants'
+import { UNIT_DIAMETER } from './constants'
 import type { AbilitySlot, Unit, Vec2, World } from './types'
 
 export function attackStopDist(u: Unit): number {
@@ -78,7 +78,7 @@ export function dealDamage(
   attacker.damageDealt += dmg
   world.floaters.push({
     x: target.pos.x + (Math.random() - 0.5) * 16,
-    y: target.pos.y - UNIT_RADIUS - 6,
+    y: target.pos.y - target.radius - 6,
     text: String(Math.round(dmg)),
     ttl: 0.75,
     color: isFocus ? 0xff5a1a : 0xe8ddd3,

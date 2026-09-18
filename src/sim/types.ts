@@ -72,6 +72,8 @@ export interface Unit {
   items: ItemSlot[]
   actives: ActiveState[]
   pos: Vec2
+  /** Collision / hitbox radius in sim units (`UNIT_RADIUS * champScale`). */
+  radius: number
   hp: number
   stats: UnitStats
   abilities: Record<AbilitySlot, AbilityState>

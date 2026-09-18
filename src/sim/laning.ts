@@ -1,4 +1,3 @@
-import { UNIT_RADIUS } from './constants'
 import { dist, norm } from './combat'
 import type { Minion, Team, World } from './types'
 
@@ -85,7 +84,7 @@ function updateLastHitWindow(world: World) {
   if (!player?.alive) return
 
   const aaKill = player.stats.aaDamage * 1.15
-  const range = player.stats.aaRange + UNIT_RADIUS
+  const range = player.stats.aaRange + player.radius
   let best: Minion | null = null
   let bestHp = Infinity
 
@@ -127,7 +126,7 @@ export function tickLaning(world: World) {
 
   if (player?.alive && player.targetId != null) {
     const minion = world.minions.find((m) => m.id === player.targetId && m.alive)
-    if (minion && dist(player.pos, minion.pos) <= player.stats.aaRange + UNIT_RADIUS) {
+    if (minion && dist(player.pos, minion.pos) <= player.stats.aaRange + player.radius) {
       minion.hp -= player.stats.aaDamage * DT * player.stats.aaSpeed
       if (minion.hp <= 0) {
         minion.hp = 0

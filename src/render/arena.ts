@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { champIconUrl } from '../sim/champions'
+import { champScale } from '../sim/gameplay-radius'
 import { COLORS, UNIT_RADIUS } from '../sim/constants'
 import type { InputState } from '../input/controller'
 import type { GroundMark, Telegraph, Unit, World } from '../sim/types'
@@ -417,7 +418,7 @@ export class ArenaRenderer {
     view.yaw += shortestAngle(view.yaw, want) * 0.2
     view.body.rotation.y = view.yaw
     view.faceRig.quaternion.copy(this.camera.quaternion)
-    view.root.scale.setScalar(u.alive ? 1.15 : 0.95)
+    view.root.scale.setScalar(champScale(u.champId) * (u.alive ? 1.15 : 0.95))
     if (!u.alive) view.body.position.y = -6
     else view.body.position.y = u.hitFlashTtl > 0 ? 1.6 : 0
 
