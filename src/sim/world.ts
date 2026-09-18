@@ -1,18 +1,20 @@
 import { UNIT_DIAMETER, UNIT_RADIUS, WARD_CAST_RANGE, WARD_COOLDOWN } from './constants'
 import { approachPoint, formationOffset, resolveUnitCollisions } from './collision'
+import { abilityShape } from './archetypes'
 import {
   abilityDamage,
   aaDamage,
   attackStopDist,
   dealDamage,
   dist,
+  inAaRange,
   enemiesOf,
   nearestEnemy,
   alliesOf,
   clampToArena,
   norm,
 } from './combat'
-import type { AbilitySlot, Unit, Vec2, World } from './types'
+import type { AbilitySlot, Telegraph, Unit, Vec2, World } from './types'
 import { tickLaning } from './laning'
 
 const DT = 1 / 60
@@ -38,7 +40,7 @@ export function issueAttackMove(world: World, u: Unit, pos: Vec2) {
   if (pick) {
     u.targetId = pick.id
     u.attackMoveTo = null
-    u.moveTo = approachPoint(u.pos, pick.pos, attackStopDist(u))
+    u.moveTo = inAaRange(u, pick) ? null : { ...pick.pos }
   } else {
     u.targetId = null
     u.moveTo = null
@@ -82,10 +84,11 @@ function stepMove(world: World, u: Unit, dest: { x: number; y: number }, stopDis
   const travel = Math.min(speed, Math.max(0, d - stopDist))
   if (travel < 0.5) return true
   const n = norm(u.pos, dest)
+  u.facing = Math.atan2(n.y, n.x)
   u.pos = clampToArena(
     { x: u.pos.x + n.x * travel, y: u.pos.y + n.y * travel },
     world.arena,
-    UNIT_RADIUS,
+    u.radius,
   )
   return dist(u.pos, dest) <= stopDist + 1.5
 }
@@ -97,14 +100,11 @@ function tryAutoAttack(world: World, u: Unit) {
     u.targetId = null
     return
   }
-  const range = u.stats.aaRange
   const stop = attackStopDist(u)
   const d = dist(u.pos, target.pos)
-  const inMeleeRange = u.stats.melee && d <= range
-  const inRangedRange = !u.stats.melee && d <= range + 4
 
-  if (!inMeleeRange && !inRangedRange) {
-    u.moveTo = approachPoint(u.pos, target.pos, stop)
+  if (!inAaRange(u, target)) {
+    u.moveTo = { ...target.pos }
     return
   }
 
@@ -124,8 +124,8 @@ function tryAutoAttack(world: World, u: Unit) {
       fromId: u.id,
       toId: target.id,
       pos: {
-        x: u.pos.x + n.x * (UNIT_RADIUS * 0.45),
-        y: u.pos.y + n.y * (UNIT_RADIUS * 0.45),
+        x: u.pos.x + n.x * (u.radius * 0.45),
+        y: u.pos.y + n.y * (u.radius * 0.45),
       },
       vel: { x: n.x * speed, y: n.y * speed },
       damage: dmg,
@@ -160,7 +160,7 @@ function tickProjectiles(world: World) {
     let hit = false
     if (p.toId != null) {
       const t = world.units[p.toId]
-      if (t && t.alive && dist(p.pos, t.pos) < UNIT_RADIUS) {
+      if (t && t.alive && dist(p.pos, t.pos) < t.radius) {
         const atk = world.units[p.fromId]
         if (atk) dealDamage(world, atk, t, p.damage, t.archetype !== 'tank')
         hit = true
@@ -168,7 +168,7 @@ function tickProjectiles(world: World) {
     } else {
       for (const t of world.units) {
         if (!t.alive || t.team === p.team) continue
-        if (dist(p.pos, t.pos) < p.radius + UNIT_RADIUS * 0.7) {
+        if (dist(p.pos, t.pos) < p.radius + t.radius * 0.7) {
           const atk = world.units[p.fromId]
           if (atk) {
             dealDamage(world, atk, t, p.damage, true)
@@ -240,24 +240,59 @@ export function castAbility(
 ) {
   const ab = u.abilities[slot]
   if (!ab.ready || ab.spent || !u.alive) return false
+  if (world.warmup > 0) return false
   const dmg = abilityDamage(u, slot)
   const target =
     aim != null
-      ? world.units.find((o) => o.alive && o.team !== u.team && dist(o.pos, aim) < UNIT_RADIUS + 8) ??
+      ? world.units.find((o) => o.alive && o.team !== u.team && dist(o.pos, aim) < o.radius + 8) ??
         nearestEnemy(world, u)
       : nearestEnemy(world, u)
   if (!target) return false
 
+  const aimPoint = aim ?? target.pos
+  const shape = abilityShape(u.archetype, slot)
+  const kind: Telegraph['kind'] = shape === 'aoe' || slot === 'w' ? 'circle' : 'line'
+  const to = { ...aimPoint }
+  const radius = slot === 'r' ? 72 : slot === 'w' ? 52 : u.archetype === 'mage' ? 22 : 28
+  const maxTtl = slot === 'r' ? 0.52 : slot === 'w' ? 0.38 : 0.26
+
+  world.telegraphs.push({
+    id: world.nextTelegraphId++,
+    fromId: u.id,
+    team: u.team,
+    kind,
+    from: { ...u.pos },
+    to,
+    radius,
+    ttl: maxTtl,
+    maxTtl,
+    slot,
+    damage: dmg,
+  })
   if (slot === 'r') {
-    const aimPoint = aim ?? target.pos
-    const n = norm(u.pos, aimPoint)
+    ab.spent = true
+    ab.ready = false
+  } else {
+    ab.ready = false
+    ab.cooldown = ab.maxCooldown
+  }
+  u.facing = Math.atan2(to.y - u.pos.y, to.x - u.pos.x)
+  return true
+}
+
+function releaseCast(world: World, t: Telegraph) {
+  const u = world.units[t.fromId]
+  if (!u?.alive) return
+
+  if (t.slot === 'r') {
+    const n = norm(t.from, t.to)
     world.projectiles.push({
       id: world.nextProjectileId++,
       fromId: u.id,
       toId: null,
       pos: { ...u.pos },
       vel: { x: n.x * 640, y: n.y * 640 },
-      damage: dmg,
+      damage: t.damage,
       ttl: 1.35,
       kind: 'ultimate',
       team: u.team,
@@ -266,13 +301,14 @@ export function castAbility(
       splashMult: 0.35,
     })
     if (u.archetype === 'assassin') {
-      u.pos = approachPoint(target.pos, u.pos, UNIT_DIAMETER)
-      u.pos = clampToArena(u.pos, world.arena, UNIT_RADIUS)
+      const target = nearestEnemy(world, u)
+      if (target) {
+        u.pos = approachPoint(target.pos, u.pos, UNIT_DIAMETER)
+        u.pos = clampToArena(u.pos, world.arena, u.radius)
+      }
     }
-    ab.spent = true
-    ab.ready = false
   } else {
-    const n = norm(u.pos, target.pos)
+    const n = norm(u.pos, t.to)
     const speed = u.archetype === 'mage' ? 820 : 700
     world.projectiles.push({
       id: world.nextProjectileId++,
@@ -280,21 +316,37 @@ export function castAbility(
       toId: null,
       pos: { ...u.pos },
       vel: { x: n.x * speed, y: n.y * speed },
-      damage: dmg,
-      ttl: slot === 'w' ? 1.1 : 0.85,
+      damage: t.damage,
+      ttl: t.slot === 'w' ? 1.1 : 0.85,
       kind: 'ability',
       team: u.team,
-      radius: slot === 'w' ? 44 : u.archetype === 'mage' ? 18 : 26,
+      radius: t.slot === 'w' ? 44 : u.archetype === 'mage' ? 18 : 26,
     })
-    ab.ready = false
-    ab.cooldown = ab.maxCooldown
   }
-  return true
+}
+
+function tickTelegraphs(world: World) {
+  const kept: Telegraph[] = []
+  for (const t of world.telegraphs) {
+    t.ttl -= DT
+    if (t.ttl <= 0) releaseCast(world, t)
+    else kept.push(t)
+  }
+  world.telegraphs = kept
+}
+
+/** R-click attack: ranged stands and AAs at range; melee still closes. */
+export function issueAttack(u: Unit, target: Unit) {
+  u.targetId = target.id
+  u.attackMoveTo = null
+  u.pendingWard = null
+  u.moveTo = !u.stats.melee && inAaRange(u, target) ? null : { ...target.pos }
 }
 
 export function useActive(world: World, u: Unit, slot: 1 | 2 | 3) {
   const act = u.actives.find((a) => a.slot === slot)
   if (!act || !act.ready || !u.alive) return false
+  if (world.warmup > 0) return false
   if (act.kind === 'burst') {
     const t = priorityTarget(world, u) ?? nearestEnemy(world, u)
     if (t) dealDamage(world, u, t, u.stats.abilityPower * 1.6, true)
@@ -310,6 +362,7 @@ export function useActive(world: World, u: Unit, slot: 1 | 2 | 3) {
 
 export function placeWard(world: World, u: Unit, pos: { x: number; y: number }) {
   if (!u.alive) return false
+  if (world.warmup > 0) return false
   if (u.wardCooldown > 0) return false
   if (dist(u.pos, pos) > WARD_CAST_RANGE + 1) return false
   world.wards.push({
@@ -448,7 +501,7 @@ function aiTick(world: World, u: Unit) {
       u.moveTo = clampToArena(
         { x: u.pos.x + n.x * 90 + offset.x * 0.2, y: u.pos.y + n.y * 90 + offset.y * 0.2 },
         world.arena,
-        UNIT_RADIUS,
+        u.radius,
       )
     } else if (d > sweet) {
       u.moveTo = approachPoint(u.pos, focus.pos, sweet)
@@ -474,6 +527,16 @@ function aiTick(world: World, u: Unit) {
 
 export function tickWorld(world: World) {
   if (world.ended) return
+
+  for (const m of world.marks) m.ttl -= DT
+  world.marks = world.marks.filter((m) => m.ttl > 0)
+
+  if (world.warmup > 0) {
+    world.warmup -= DT
+    if (world.warmup <= 0) world.warmup = 0
+    return
+  }
+
   world.tick += 1
   world.time += DT
   if (world.time >= world.duration) {
@@ -503,10 +566,24 @@ export function tickWorld(world: World) {
         )
         u.targetId = pick.id
         u.attackMoveTo = null
-        u.moveTo = approachPoint(u.pos, pick.pos, attackStopDist(u))
+        u.moveTo = inAaRange(u, pick) ? null : { ...pick.pos }
       } else {
         const arrived = stepMove(world, u, u.attackMoveTo, UNIT_RADIUS)
         if (arrived) u.attackMoveTo = null
+      }
+    } else if (u.isPlayer && u.targetId != null && !u.pendingWard) {
+      const target = world.units[u.targetId]
+      if (target?.alive) {
+        if (!u.stats.melee && inAaRange(u, target)) {
+          u.moveTo = null
+        } else {
+          const dest = { ...target.pos }
+          const arrived = stepMove(world, u, dest, attackStopDist(u))
+          u.moveTo = arrived ? null : dest
+        }
+      } else if (u.moveTo) {
+        const arrived = stepMove(world, u, u.moveTo, UNIT_RADIUS * 0.5)
+        if (arrived) u.moveTo = null
       }
     } else if (u.moveTo) {
       const stop = u.targetId != null ? attackStopDist(u) : UNIT_RADIUS * 0.5
@@ -519,6 +596,14 @@ export function tickWorld(world: World) {
 
   resolveUnitCollisions(world)
 
+  for (const u of world.units) {
+    if (!u.alive) continue
+    if (u.targetId != null) {
+      const t = world.units[u.targetId]
+      if (t) u.facing = Math.atan2(t.pos.y - u.pos.y, t.pos.x - u.pos.x)
+    }
+  }
+
   for (const f of world.floaters) f.ttl -= DT
   world.floaters = world.floaters.filter((f) => f.ttl > 0)
 
@@ -528,6 +613,7 @@ export function tickWorld(world: World) {
   for (const w of world.wards) w.ttl -= DT
   world.wards = world.wards.filter((w) => w.ttl > 0)
 
+  tickTelegraphs(world)
   tickProjectiles(world)
 
   if (world.mode === 'laning') {
@@ -546,6 +632,10 @@ export function tickWorld(world: World) {
       world.result = blueAlive ? 'defeat' : 'victory'
     }
   }
+}
+
+export function addGroundMark(world: World, x: number, y: number, kind: 'move' | 'amove' | 'ward') {
+  world.marks.push({ x, y, ttl: 0.75, kind })
 }
 
 export { DT }

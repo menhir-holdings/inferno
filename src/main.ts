@@ -1,5 +1,5 @@
 import './style.css'
-import { attachCanvasFit, createApp, ArenaRenderer } from './render/arena'
+import { ArenaRenderer } from './render/arena'
 import { champIconUrl } from './sim/champions'
 import { generateScenario, scenarioToWorld } from './scenario/generate'
 import { generateLaningScenario } from './scenario/laning'
@@ -28,7 +28,6 @@ let acc = 0
 let last = 0
 let raf = 0
 let renderer: ArenaRenderer | null = null
-let pixiApp: Awaited<ReturnType<typeof createApp>> | null = null
 let detachInput: (() => void) | null = null
 let detachFit: (() => void) | null = null
 const inputState = createInputState()
@@ -143,33 +142,32 @@ async function startFight(sc: Scenario) {
       <div class="portrait-card" id="hud-target"></div>
     </div>
     <p class="play-hint" id="hud-hint"></p>
+    <div class="drill-brief" id="drill-brief" hidden>
+      <div class="pause-kicker play-kicker"><i></i> Drill <i></i></div>
+      <h2 id="brief-title"></h2>
+      <p id="brief-line"></p>
+      <div class="brief-count" id="brief-count">3</div>
+    </div>
   `
   const hint = overlay.querySelector('#hud-hint') as HTMLElement
   hint.innerHTML =
     'RMB · A · X+click · QWER · 1234 · S · Tab · Esc · <button type="button" class="settings-link" id="hud-hotkeys">Hotkeys</button>'
   overlay.querySelector('#hud-exit')!.addEventListener('click', () => showHome())
   overlay.querySelector('#hud-hotkeys')!.addEventListener('click', () => openBindingsModal())
+  const brief = overlay.querySelector('#drill-brief') as HTMLElement
+  const laning = world.mode === 'laning'
+  ;(overlay.querySelector('#brief-title') as HTMLElement).textContent = laning ? 'Laning' : 'Teamfight'
+  ;(overlay.querySelector('#brief-line') as HTMLElement).textContent = laning
+    ? 'Last-hit the wave. Trade when they CS. Don\'t die.'
+    : 'Dodge the floor. Focus a carry. Execute.'
+  brief.hidden = false
   shell.append(host, overlay)
   appRoot.append(shell)
 
-  pixiApp = await createApp(host, world.arena.w, world.arena.h)
-  renderer = new ArenaRenderer(pixiApp)
+  renderer = new ArenaRenderer(host, world.arena.w, world.arena.h)
   await renderer.bootstrapUnits(world)
-
-  const canvas = pixiApp.canvas
-  detachFit = attachCanvasFit(host, canvas, world.arena.w, world.arena.h)
-  const rect = () => canvas.getBoundingClientRect()
-  detachInput = attachInput(
-    canvas,
-    () => world,
-    inputState,
-    (cx, cy) => {
-      const r = rect()
-      const scaleX = world!.arena.w / r.width
-      const scaleY = world!.arena.h / r.height
-      return { x: (cx - r.left) * scaleX, y: (cy - r.top) * scaleY }
-    },
-  )
+  detachFit = renderer.attachResize()
+  detachInput = attachInput(renderer.canvas, () => world, inputState, (cx, cy) => renderer!.screenToSim(cx, cy))
 
   updateHud()
   updateAbilityBar()
@@ -194,6 +192,7 @@ function frame(now: number) {
   }
   updateHud()
   updateAbilityBar()
+  syncBrief()
   syncScoreboard()
   syncDeathRematch()
 
@@ -244,6 +243,19 @@ function syncRail(node: HTMLElement | null, units: Unit[]) {
   }
 }
 
+function syncBrief() {
+  const brief = document.getElementById('drill-brief')
+  const count = document.getElementById('brief-count')
+  if (!brief || !world) return
+  if (world.warmup <= 0 || world.ended) {
+    brief.hidden = true
+    return
+  }
+  brief.hidden = false
+  const n = Math.ceil(world.warmup)
+  if (count) count.textContent = n > 0 ? String(n) : 'GO'
+}
+
 function portraitCardHtml(u: Unit | null, empty: string) {
   if (!u) return `<div class="portrait-card-empty">${empty}</div>`
   const hp = Math.max(0, Math.round(u.hp))
@@ -284,7 +296,7 @@ function updateHud() {
   const p = world.units[world.playerId]!
   const remain = Math.max(0, world.duration - world.time)
   const clock = document.getElementById('hud-clock')
-  if (clock) clock.textContent = `${remain.toFixed(1)}s`
+  if (clock) clock.textContent = world.warmup > 0 ? 'HOLD' : `${remain.toFixed(1)}s`
   const target = p.targetId != null ? world.units[p.targetId] : null
   const mode = targetingLabel(inputState.targeting)
   const stats = document.getElementById('hud-stats')
@@ -561,7 +573,6 @@ function cleanupFight() {
   detachFit = null
   renderer?.destroy()
   renderer = null
-  pixiApp = null
   world = null
 }
 

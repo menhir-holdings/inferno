@@ -1,9 +1,15 @@
-import { UNIT_DIAMETER, UNIT_RADIUS } from './constants'
+import { UNIT_DIAMETER } from './constants'
 import type { AbilitySlot, Unit, Vec2, World } from './types'
 
 export function attackStopDist(u: Unit): number {
   if (u.stats.melee || u.stats.aaRange < 200) return UNIT_DIAMETER * 0.98
   return u.stats.aaRange * 0.92
+}
+
+/** Center-to-center AA reach. Ranged gets slack so they fire without closing to melee. */
+export function inAaRange(u: Unit, target: { pos: Vec2 }): boolean {
+  const slack = u.stats.melee ? 0 : 4
+  return dist(u.pos, target.pos) <= u.stats.aaRange + slack
 }
 
 export function dist(a: Vec2, b: Vec2): number {
@@ -72,7 +78,7 @@ export function dealDamage(
   attacker.damageDealt += dmg
   world.floaters.push({
     x: target.pos.x + (Math.random() - 0.5) * 16,
-    y: target.pos.y - UNIT_RADIUS - 6,
+    y: target.pos.y - target.radius - 6,
     text: String(Math.round(dmg)),
     ttl: 0.75,
     color: isFocus ? 0xff5a1a : 0xe8ddd3,
@@ -109,3 +115,4 @@ export function abilityDamage(caster: Unit, slot: AbilitySlot): number {
 export function aaDamage(attacker: Unit): number {
   return attacker.stats.aaDamage * (1 + attacker.dpsBuff)
 }
+

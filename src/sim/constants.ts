@@ -1,4 +1,4 @@
-/** Visual + physics radius for champ blobs */
+/** Visual + physics radius for a baseline (gameplayRadius 65) champ blob */
 export const UNIT_RADIUS = 28
 export const UNIT_DIAMETER = UNIT_RADIUS * 2
 /** Inner circle for icon fill (inside ring stroke) */
